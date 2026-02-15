@@ -237,6 +237,15 @@ The `SecurityMonitor` evaluates 18 event categories across 4 severity levels:
 
 Designed for **macOS**. Uses system tools such as `ps`, `lsof`, `pgrep`, `nettop`, and `git`. Linux support is possible with minor adjustments to log paths and system commands.
 
+## API Stability (v1)
+
+Starting with `v1.x`, the project follows semantic versioning for public APIs:
+
+- **No breaking changes in minor/patch versions** (`v1.y.z`).
+- **Breaking changes only in a new major version** (`v2.0.0`, etc.).
+- Public types/functions documented in this README and package docs are considered stable.
+- Internal helpers and unexported symbols may change at any time.
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.
