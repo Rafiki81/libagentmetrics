@@ -1,0 +1,13 @@
+# Default ownership
+* @Rafiki81
+
+# Core library paths
+/agent/ @Rafiki81
+/config/ @Rafiki81
+/monitor/ @Rafiki81
+
+# Governance and automation
+/.github/ @Rafiki81
+/.github/workflows/ @Rafiki81
+/README.md @Rafiki81
+/go.mod @Rafiki81

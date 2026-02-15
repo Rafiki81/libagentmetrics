@@ -256,7 +256,7 @@ Release notes/changelog entries are generated automatically when creating a GitH
 
 ## Contributing
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for branch strategy, validation checklist, and recommended branch protection rules.
 
 ## License
 
