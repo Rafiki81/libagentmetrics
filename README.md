@@ -246,6 +246,14 @@ Starting with `v1.x`, the project follows semantic versioning for public APIs:
 - Public types/functions documented in this README and package docs are considered stable.
 - Internal helpers and unexported symbols may change at any time.
 
+## Commits and Changelog
+
+For maintainability, this project prefers **Conventional Commits** in PR titles/merge commits:
+
+- `feat: ...`, `fix: ...`, `docs: ...`, `perf: ...`, `refactor: ...`, `test: ...`, `ci: ...`, `chore: ...`
+
+Release notes/changelog entries are generated automatically when creating a GitHub Release from a semantic tag (e.g. `v1.2.3`).
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.

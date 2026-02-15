@@ -40,6 +40,28 @@ jobs:
       - name: Unit tests
         run: go test ./...
 
+      - name: Coverage report (warning-only)
+        env:
+          COVERAGE_WARN_THRESHOLD: "60"
+        run: |
+          set -euo pipefail
+          go test ./... -coverprofile=/tmp/coverage.out > /tmp/coverage_test.log
+          total=$(go tool cover -func=/tmp/coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          if [ -z "$total" ]; then
+            echo "::warning::Could not compute total coverage"
+            total="0"
+          fi
+
+          {
+            echo "## Coverage"
+            echo
+            echo "Total coverage: ${total}%"
+            echo "Warning threshold: ${COVERAGE_WARN_THRESHOLD}% (non-blocking)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          awk -v t="$total" -v threshold="$COVERAGE_WARN_THRESHOLD" 'BEGIN { if (t+0 < threshold+0) exit 1; else exit 0 }' || \
+            echo "::warning::Coverage is below ${COVERAGE_WARN_THRESHOLD}% (current: ${total}%)."
+
       - name: Race tests
         run: go test -race ./...
 
