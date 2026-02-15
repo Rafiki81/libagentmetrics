@@ -5,6 +5,13 @@
 
 A Go library for real-time detection, monitoring, and analysis of AI coding agents. Zero external dependencies — stdlib only.
 
+## What's New in v0.2.0
+
+- **Global monitor health** via `BuildHealthReport(...)` for quick operational visibility.
+- **Budget guardrails** with daily/monthly limits and fleet-level checks (`CheckFleet`).
+- **Better resilience** with safer monitor defaults (zero-value safe) and tighter fallback behavior.
+- **Performance-focused guidance** in docs to keep overhead low in production loops.
+
 ## Features
 
 - **Auto-detection** of 12 agents: Claude Code, GitHub Copilot, Cursor, Aider, Cody, Continue.dev, Windsurf, Gemini CLI, OpenAI Codex CLI, Open Codex, MoltBot, Codel.
