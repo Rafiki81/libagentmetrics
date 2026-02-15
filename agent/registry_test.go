@@ -57,10 +57,10 @@ func TestFindByProcess(t *testing.T) {
 	r := NewRegistry()
 
 	tests := []struct {
-		name     string
-		process  string
-		wantID   string
-		wantNil  bool
+		name    string
+		process string
+		wantID  string
+		wantNil bool
 	}{
 		{"claude", "claude", "claude-code", false},
 		{"copilot-agent", "copilot-agent", "copilot", false},

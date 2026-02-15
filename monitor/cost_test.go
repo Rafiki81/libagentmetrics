@@ -107,9 +107,9 @@ func TestFindPricing_FuzzyMatch(t *testing.T) {
 		model       string
 		expectInput float64
 	}{
-		{"claude-opus-4-latest", 15.00},       // Contains "claude" and "opus"
-		{"gpt-4o-2024-01-01", 2.50},           // Contains "gpt-4o"
-		{"some-gpt-4-variant", 30.00},         // Contains "gpt-4"
+		{"claude-opus-4-latest", 15.00}, // Contains "claude" and "opus"
+		{"gpt-4o-2024-01-01", 2.50},     // Contains "gpt-4o"
+		{"some-gpt-4-variant", 30.00},   // Contains "gpt-4"
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {

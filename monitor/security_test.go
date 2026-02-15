@@ -535,8 +535,8 @@ func TestEventCounts(t *testing.T) {
 	sm := NewSecurityMonitor(cfg)
 	inst := newTestInstance("test")
 	inst.Terminal.RecentCommands = []agent.TerminalCommand{
-		{Command: "rm -rf /", Timestamp: time.Now()},                     // Critical
-		{Command: "crontab -e", Timestamp: time.Now()},                   // Medium
+		{Command: "rm -rf /", Timestamp: time.Now()},                       // Critical
+		{Command: "crontab -e", Timestamp: time.Now()},                     // Medium
 		{Command: "export LD_PRELOAD=/tmp/evil.so", Timestamp: time.Now()}, // High
 	}
 	inst.NetConns = []agent.NetConnection{

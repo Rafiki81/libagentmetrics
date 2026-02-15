@@ -281,9 +281,9 @@ func TestIsAgentDisabled(t *testing.T) {
 		want    bool
 	}{
 		{"copilot", true},
-		{"Copilot", true},          // case-insensitive
-		{"COPILOT", true},          // case-insensitive
-		{"aider", true},            // case-insensitive match
+		{"Copilot", true}, // case-insensitive
+		{"COPILOT", true}, // case-insensitive
+		{"aider", true},   // case-insensitive match
 		{"Aider", true},
 		{"claude-code", false},
 		{"cursor", false},

@@ -154,25 +154,25 @@ type LocalModelEndpoint struct {
 
 // SecurityConfig controls security monitoring and alerting.
 type SecurityConfig struct {
-	Enabled                 bool     `json:"enabled"`
-	BlockDangerousCommands  bool     `json:"block_dangerous_commands"`
-	DangerousCommands       []string `json:"dangerous_commands"`
-	SensitiveFiles          []string `json:"sensitive_files"`
-	SuspiciousHosts         []string `json:"suspicious_hosts"`
-	AllowedRegistries       []string `json:"allowed_registries"`
-	EscalationCommands      []string `json:"escalation_commands"`
-	CodeInjectionPatterns   []string `json:"code_injection_patterns"`
-	SystemModifyCommands    []string `json:"system_modify_commands"`
-	ReverseShellPatterns    []string `json:"reverse_shell_patterns"`
-	ObfuscationPatterns     []string `json:"obfuscation_patterns"`
-	ContainerEscapePatterns []string `json:"container_escape_patterns"`
-	EnvManipulationPatterns []string `json:"env_manipulation_patterns"`
+	Enabled                  bool     `json:"enabled"`
+	BlockDangerousCommands   bool     `json:"block_dangerous_commands"`
+	DangerousCommands        []string `json:"dangerous_commands"`
+	SensitiveFiles           []string `json:"sensitive_files"`
+	SuspiciousHosts          []string `json:"suspicious_hosts"`
+	AllowedRegistries        []string `json:"allowed_registries"`
+	EscalationCommands       []string `json:"escalation_commands"`
+	CodeInjectionPatterns    []string `json:"code_injection_patterns"`
+	SystemModifyCommands     []string `json:"system_modify_commands"`
+	ReverseShellPatterns     []string `json:"reverse_shell_patterns"`
+	ObfuscationPatterns      []string `json:"obfuscation_patterns"`
+	ContainerEscapePatterns  []string `json:"container_escape_patterns"`
+	EnvManipulationPatterns  []string `json:"env_manipulation_patterns"`
 	CredentialAccessPatterns []string `json:"credential_access_patterns"`
-	LogTamperingPatterns    []string `json:"log_tampering_patterns"`
-	RemoteAccessPatterns    []string `json:"remote_access_patterns"`
-	ShellPersistenceFiles   []string `json:"shell_persistence_files"`
-	MassDeletionThreshold   int      `json:"mass_deletion_threshold"`
-	MaxEvents               int      `json:"max_events"`
+	LogTamperingPatterns     []string `json:"log_tampering_patterns"`
+	RemoteAccessPatterns     []string `json:"remote_access_patterns"`
+	ShellPersistenceFiles    []string `json:"shell_persistence_files"`
+	MassDeletionThreshold    int      `json:"mass_deletion_threshold"`
+	MaxEvents                int      `json:"max_events"`
 }
 
 // DefaultConfig returns the default configuration.
