@@ -82,6 +82,8 @@ type AlertConfig struct {
 	DailyBudgetUSD    float64 `json:"daily_budget_usd"`
 	MonthlyBudgetUSD  float64 `json:"monthly_budget_usd"`
 	BudgetWarnPercent float64 `json:"budget_warn_percent"`
+	BurnRateWarning   float64 `json:"burn_rate_warning"`
+	BurnRateCritical  float64 `json:"burn_rate_critical"`
 	IdleMinutes       int     `json:"idle_minutes"`
 	CooldownMinutes   int     `json:"cooldown_minutes"`
 	MaxAlerts         int     `json:"max_alerts"`
@@ -200,6 +202,7 @@ func DefaultConfig() *Config {
 			TokenWarning: 500000, TokenCritical: 2000000,
 			CostWarning: 1.0, CostCritical: 5.0,
 			DailyBudgetUSD: 0, MonthlyBudgetUSD: 0, BudgetWarnPercent: 80,
+			BurnRateWarning: 2.0, BurnRateCritical: 3.0,
 			IdleMinutes: 10, CooldownMinutes: 5, MaxAlerts: 100,
 		},
 		Security: SecurityConfig{

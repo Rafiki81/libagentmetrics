@@ -153,9 +153,23 @@ func (tm *TokenMonitor) Collect(agents []agent.Instance) {
 		// Calculate cost based on model and tokens
 		m := tm.data[id]
 		m.EstCost = EstimateCost(m.LastModel, m.InputTokens, m.OutputTokens)
+		m.Confidence = tokenConfidence(m.Source)
 
 		// Copy metrics to agent instance
 		a.Tokens = *m
+	}
+}
+
+func tokenConfidence(source agent.TokenSource) float64 {
+	switch source {
+	case agent.TokenSourceLog, agent.TokenSourceDB, agent.TokenSourceLocalAPI:
+		return 0.95
+	case agent.TokenSourceEstimated:
+		return 0.70
+	case agent.TokenSourceNetwork:
+		return 0.60
+	default:
+		return 0.0
 	}
 }
 

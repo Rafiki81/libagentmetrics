@@ -58,6 +58,7 @@ type TokenMetrics struct {
 	RequestCount  int         `json:"request_count"`
 	LastModel     string      `json:"last_model"`
 	Source        TokenSource `json:"source"`
+	Confidence    float64     `json:"confidence"`
 	LastRequestAt time.Time   `json:"last_request_at"`
 	EstCost       float64     `json:"est_cost"`
 	AvgLatencyMs  int64       `json:"avg_latency_ms"`
