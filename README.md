@@ -5,12 +5,15 @@
 
 A Go library for real-time detection, monitoring, and analysis of AI coding agents. Zero external dependencies — stdlib only.
 
-## What's New in v0.2.0
+**Latest release:** `v1.1.0` (2026-02-15)
 
-- **Global monitor health** via `BuildHealthReport(...)` for quick operational visibility.
-- **Budget guardrails** with daily/monthly limits and fleet-level checks (`CheckFleet`).
-- **Better resilience** with safer monitor defaults (zero-value safe) and tighter fallback behavior.
-- **Performance-focused guidance** in docs to keep overhead low in production loops.
+## What's New in v1.1.0
+
+- **Token signal confidence** in `TokenMetrics.Confidence` so consumers can weigh metric reliability.
+- **Burn-rate guardrails** with warning/critical thresholds (`burn_rate_warning`, `burn_rate_critical`).
+- **Fleet budget alerts** with daily/monthly limits and aggregated checks via `CheckFleet`.
+- **Operational hardening** in monitors (timeouts, safer defaults, pruning and improved resilience paths).
+- **Release + CI maturity** with stable `v1.x` API policy and automated release/check workflows.
 
 ## Features
 
