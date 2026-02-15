@@ -68,7 +68,9 @@ func NewAlertMonitor(thresholds AlertThresholds) *AlertMonitor {
 	}
 }
 
-// Check evaluates an agent against thresholds and generates alerts.
+// Check evaluates an agent's CPU, memory, token count, cost, and idle time
+// against the configured thresholds. Alerts are deduplicated using a
+// per-agent cooldown window.
 func (am *AlertMonitor) Check(a *agent.Instance) {
 	am.mu.Lock()
 	defer am.mu.Unlock()

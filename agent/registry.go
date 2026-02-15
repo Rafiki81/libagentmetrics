@@ -127,7 +127,8 @@ func NewRegistry() *Registry {
 	}
 }
 
-// FindByProcess tries to match a process name against known agents.
+// FindByProcess returns the Info for the agent whose ProcessNames list contains
+// processName, or nil if no match is found.
 func (r *Registry) FindByProcess(processName string) *Info {
 	for i, a := range r.Agents {
 		for _, pname := range a.ProcessNames {
@@ -139,7 +140,8 @@ func (r *Registry) FindByProcess(processName string) *Info {
 	return nil
 }
 
-// FindByCmdLine tries to match command line patterns against known agents.
+// FindByCmdLine returns the Info for the first agent whose DetectPatterns
+// appear as a word in cmdline, or nil if no match is found.
 func (r *Registry) FindByCmdLine(cmdline string) *Info {
 	for i, a := range r.Agents {
 		for _, pattern := range a.DetectPatterns {

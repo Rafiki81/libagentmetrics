@@ -46,7 +46,9 @@ func (fw *FileWatcher) RemoveDir(dir string) {
 	delete(fw.dirs, dir)
 }
 
-// Start begins watching for file changes (polling-based for portability).
+// Start begins polling for file changes at the given interval.
+// It takes an initial snapshot and then checks for CREATE, MODIFY, and DELETE
+// operations in a background goroutine. Call [FileWatcher.Stop] to terminate.
 func (fw *FileWatcher) Start(interval time.Duration) {
 	fw.takeSnapshots()
 

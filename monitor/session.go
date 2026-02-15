@@ -80,7 +80,9 @@ func (sm *SessionMonitor) Reset(agentID string) {
 	delete(sm.sessions, agentID)
 }
 
-// FormatDuration formats a duration for display.
+// FormatDuration formats a duration for human-readable display.
+// Returns "—" for zero/negative, "Xs" for seconds-only,
+// "Xm Xs" for minutes, or "Xh Xm" for hours.
 func FormatDuration(d time.Duration) string {
 	if d <= 0 {
 		return "—"

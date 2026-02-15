@@ -13,10 +13,12 @@ import (
 // Duration is a time.Duration that marshals/unmarshals as a human-readable string.
 type Duration time.Duration
 
+// MarshalJSON encodes the duration as a human-readable string (e.g. "3s", "5m0s").
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
+// UnmarshalJSON decodes a duration from a string (e.g. "3s") or a numeric nanosecond value.
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var v interface{}
 	if err := json.Unmarshal(b, &v); err != nil {
@@ -335,7 +337,8 @@ func (c *Config) Save() error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// ShouldIgnoreProcess returns true if the cmdline matches an ignore pattern.
+// ShouldIgnoreProcess reports whether cmdline matches any of the
+// configured IgnoreProcessPatterns. Returns false if SkipSystemProcesses is disabled.
 func (c *Config) ShouldIgnoreProcess(cmdline string) bool {
 	if !c.Detection.SkipSystemProcesses {
 		return false
@@ -368,7 +371,8 @@ func (c *Config) IsSystemProcess(cmdline string) bool {
 	return false
 }
 
-// IsAgentDisabled returns true if the given agent ID is in the disabled list.
+// IsAgentDisabled reports whether agentID appears in the DisabledAgents list.
+// The comparison is case-insensitive.
 func (c *Config) IsAgentDisabled(agentID string) bool {
 	for _, id := range c.Detection.DisabledAgents {
 		if strings.EqualFold(id, agentID) {

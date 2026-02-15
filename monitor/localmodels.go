@@ -60,7 +60,9 @@ func knownServers() []serverDef {
 	}
 }
 
-// Collect scans for all local model servers and updates their status.
+// Collect scans for local model servers (Ollama, LM Studio, llama.cpp, vLLM,
+// LocalAI, text-generation-webui, GPT4All) plus any custom endpoints, and
+// returns their current status and loaded models.
 func (lm *LocalModelMonitor) Collect() []agent.LocalModelInfo {
 	if !lm.config.Enabled {
 		return nil

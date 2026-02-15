@@ -49,7 +49,9 @@ func EstimateCost(model string, inputTokens, outputTokens int64) float64 {
 	return inputCost + outputCost
 }
 
-// FindPricing finds the best matching pricing for a model name.
+// FindPricing returns the best matching pricing for a model name.
+// It tries, in order: exact match, substring match, model-family fallback
+// (claude, gpt-4, gemini), and finally the "default" entry.
 func FindPricing(model string) ModelPricing {
 	if model == "" {
 		return ModelPrices["default"]
@@ -117,7 +119,9 @@ func containsSubstr(s, substr string) bool {
 	return false
 }
 
-// FormatCost formats a cost value for display.
+// FormatCost formats a USD cost value for display.
+// Returns "—" for zero/negative, "<$0.01" for sub-cent amounts,
+// or "$X.XX" otherwise.
 func FormatCost(cost float64) string {
 	if cost <= 0 {
 		return "—"

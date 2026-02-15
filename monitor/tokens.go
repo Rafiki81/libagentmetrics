@@ -43,7 +43,9 @@ func NewTokenMonitor() *TokenMonitor {
 	}
 }
 
-// Collect gathers token metrics for all detected agents.
+// Collect gathers token metrics for all detected agents. It dispatches to
+// agent-specific collectors (Copilot logs, Claude JSONL, Cursor DB, Aider
+// history) and falls back to network-based estimation for unknown agents.
 func (tm *TokenMonitor) Collect(agents []agent.Instance) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -581,6 +583,8 @@ func estimateFromLsof(pid int) int64 {
 }
 
 // FormatTokenCount formats a token count for display.
+// Returns "—" for zero/negative, "X.Xk" for thousands,
+// "X.XM" for millions, or the raw number for smaller values.
 func FormatTokenCount(count int64) string {
 	if count <= 0 {
 		return "—"
@@ -594,7 +598,8 @@ func FormatTokenCount(count int64) string {
 	return strconv.FormatInt(count, 10)
 }
 
-// FormatTokensPerSec formats tokens/sec for display.
+// FormatTokensPerSec formats a tokens-per-second rate for display.
+// Returns "—" for zero/negative, "X.Xk/s" for >= 1000, or "X/s" otherwise.
 func FormatTokensPerSec(tps float64) string {
 	if tps <= 0 {
 		return "—"

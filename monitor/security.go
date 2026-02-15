@@ -33,7 +33,9 @@ func NewSecurityMonitor(cfg config.SecurityConfig) *SecurityMonitor {
 	}
 }
 
-// CheckAgent analyzes all activity from an agent for security issues.
+// CheckAgent analyzes an agent's terminal commands, file operations, and
+// network connections against the configured security rules. Detected events
+// are stored internally and also written to a.SecurityEvents.
 func (sm *SecurityMonitor) CheckAgent(a *agent.Instance) {
 	if !sm.config.Enabled {
 		return

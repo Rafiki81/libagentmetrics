@@ -92,7 +92,8 @@ func parseLsofNetLine(line string) *agent.NetConnection {
 	}
 }
 
-// GetListeningPorts returns ports that are being listened on (port -> PID).
+// GetListeningPorts returns a map of TCP port → PID for all processes
+// currently in LISTEN state. Uses lsof on macOS.
 func (nm *NetworkMonitor) GetListeningPorts() map[int]int {
 	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
 	out, err := cmd.Output()
@@ -132,7 +133,8 @@ func (nm *NetworkMonitor) GetListeningPorts() map[int]int {
 	return result
 }
 
-// DescribeConnection returns a human-readable description of a connection.
+// DescribeConnection returns a human-readable one-line summary of a connection,
+// e.g. "tcp 127.0.0.1:8080 → 10.0.0.1:443 [ESTABLISHED]".
 func DescribeConnection(conn agent.NetConnection) string {
 	if conn.RemoteAddr == "" {
 		return fmt.Sprintf("%s %s (LISTEN)", conn.Protocol, conn.LocalAddr)

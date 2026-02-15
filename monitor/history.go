@@ -44,7 +44,8 @@ type HistoryStore struct {
 	dataDir string
 }
 
-// NewHistoryStore creates a history store.
+// NewHistoryStore creates a history store. If dataDir is empty, it defaults
+// to ~/.agentmetrics/history. If maxSize is <= 0, it defaults to 10000 records.
 func NewHistoryStore(dataDir string, maxSize int) *HistoryStore {
 	if maxSize <= 0 {
 		maxSize = 10000
@@ -121,7 +122,8 @@ func (hs *HistoryStore) GetRecordsForAgent(agentID string) []HistoryRecord {
 	return result
 }
 
-// ExportJSON exports history to a JSON file.
+// ExportJSON exports all history records to a JSON file.
+// If path is empty, a timestamped file is created in the data directory.
 func (hs *HistoryStore) ExportJSON(path string) error {
 	hs.mu.Lock()
 	records := make([]HistoryRecord, len(hs.records))
@@ -146,7 +148,8 @@ func (hs *HistoryStore) ExportJSON(path string) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// ExportCSV exports history to a CSV file.
+// ExportCSV exports all history records to a CSV file with a header row.
+// If path is empty, a timestamped file is created in the data directory.
 func (hs *HistoryStore) ExportCSV(path string) error {
 	hs.mu.Lock()
 	records := make([]HistoryRecord, len(hs.records))

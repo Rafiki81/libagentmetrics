@@ -111,7 +111,9 @@ func getChildProcesses(parentPID int) []childProcess {
 	return children
 }
 
-// CategorizeCommand assigns a category to a terminal command.
+// CategorizeCommand returns the category of a terminal command.
+// Possible categories: "build", "test", "install", "git", "run",
+// "lint", "file", or "other".
 func CategorizeCommand(cmd string) string {
 	return categorizeCommand(cmd)
 }
