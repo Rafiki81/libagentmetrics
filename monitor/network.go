@@ -5,16 +5,58 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Rafiki81/libagentmetrics/agent"
 )
 
+const (
+	networkErrLsofConnections = "lsof_connections"
+	networkErrLsofListening   = "lsof_listening"
+)
+
 // NetworkMonitor tracks network connections for agent processes.
-type NetworkMonitor struct{}
+type NetworkMonitor struct {
+	mu         sync.Mutex
+	errorStats map[string]MonitorErrorStats
+}
+
+func (nm *NetworkMonitor) ensureInit() {
+	if nm.errorStats == nil {
+		nm.errorStats = make(map[string]MonitorErrorStats)
+	}
+}
 
 // NewNetworkMonitor creates a new network monitor.
 func NewNetworkMonitor() *NetworkMonitor {
-	return &NetworkMonitor{}
+	return &NetworkMonitor{errorStats: make(map[string]MonitorErrorStats)}
+}
+
+// GetErrorStats returns a snapshot of operational errors per source.
+func (nm *NetworkMonitor) GetErrorStats() map[string]MonitorErrorStats {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	nm.ensureInit()
+
+	stats := make(map[string]MonitorErrorStats, len(nm.errorStats))
+	for k, v := range nm.errorStats {
+		stats[k] = v
+	}
+	return stats
+}
+
+func (nm *NetworkMonitor) recordError(source string, err error) {
+	if err == nil {
+		return
+	}
+	nm.ensureInit()
+
+	stat := nm.errorStats[source]
+	stat.Count++
+	stat.LastError = err.Error()
+	stat.LastAt = time.Now()
+	nm.errorStats[source] = stat
 }
 
 // GetConnections returns active network connections for a PID.
@@ -22,6 +64,9 @@ func (nm *NetworkMonitor) GetConnections(pid int) []agent.NetConnection {
 	cmd := exec.Command("lsof", "-i", "-n", "-P", "-p", strconv.Itoa(pid))
 	out, err := cmd.Output()
 	if err != nil {
+		nm.mu.Lock()
+		nm.recordError(networkErrLsofConnections, err)
+		nm.mu.Unlock()
 		return nil
 	}
 
@@ -98,6 +143,9 @@ func (nm *NetworkMonitor) GetListeningPorts() map[int]int {
 	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
 	out, err := cmd.Output()
 	if err != nil {
+		nm.mu.Lock()
+		nm.recordError(networkErrLsofListening, err)
+		nm.mu.Unlock()
 		return nil
 	}
 

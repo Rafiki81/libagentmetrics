@@ -4,38 +4,121 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Rafiki81/libagentmetrics/agent"
 )
 
+const (
+	gitErrRepo   = "repo"
+	gitErrBranch = "branch"
+	gitErrLog    = "log"
+	gitErrStatus = "status"
+	gitErrDiff   = "diff"
+)
+
 // GitMonitor tracks git activity in agent working directories.
 type GitMonitor struct {
 	lastCommitHash map[string]string
+	mu             sync.Mutex
+	errorStats     map[string]MonitorErrorStats
+}
+
+func (gm *GitMonitor) ensureInit() {
+	if gm.lastCommitHash == nil {
+		gm.lastCommitHash = make(map[string]string)
+	}
+	if gm.errorStats == nil {
+		gm.errorStats = make(map[string]MonitorErrorStats)
+	}
 }
 
 // NewGitMonitor creates a new git monitor.
 func NewGitMonitor() *GitMonitor {
 	return &GitMonitor{
 		lastCommitHash: make(map[string]string),
+		errorStats:     make(map[string]MonitorErrorStats),
 	}
+}
+
+// GetErrorStats returns a snapshot of operational errors per source.
+func (gm *GitMonitor) GetErrorStats() map[string]MonitorErrorStats {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+	gm.ensureInit()
+
+	stats := make(map[string]MonitorErrorStats, len(gm.errorStats))
+	for k, v := range gm.errorStats {
+		stats[k] = v
+	}
+	return stats
+}
+
+func (gm *GitMonitor) recordError(source string, err error) {
+	if err == nil {
+		return
+	}
+	gm.ensureInit()
+
+	stat := gm.errorStats[source]
+	stat.Count++
+	stat.LastError = err.Error()
+	stat.LastAt = time.Now()
+	gm.errorStats[source] = stat
 }
 
 // Collect gathers git metrics for an agent's working directory.
 func (gm *GitMonitor) Collect(a *agent.Instance) {
+	gm.mu.Lock()
+	gm.ensureInit()
+	gm.mu.Unlock()
+
 	if a.WorkDir == "" {
 		return
 	}
 
-	if !isGitRepo(a.WorkDir) {
+	isRepo, err := gm.isGitRepo(a.WorkDir)
+	if err != nil {
+		gm.mu.Lock()
+		gm.recordError(gitErrRepo, err)
+		gm.mu.Unlock()
+		return
+	}
+	if !isRepo {
 		return
 	}
 
-	a.Git.Branch = gitCurrentBranch(a.WorkDir)
-	a.Git.RecentCommits = gitRecentCommits(a.WorkDir, 5)
-	a.Git.Uncommitted = gitUncommittedCount(a.WorkDir)
+	branch, err := gm.gitCurrentBranch(a.WorkDir)
+	if err != nil {
+		gm.mu.Lock()
+		gm.recordError(gitErrBranch, err)
+		gm.mu.Unlock()
+	}
+	a.Git.Branch = branch
 
-	added, removed, files := gitDiffStats(a.WorkDir)
+	commits, err := gm.gitRecentCommits(a.WorkDir, 5)
+	if err != nil {
+		gm.mu.Lock()
+		gm.recordError(gitErrLog, err)
+		gm.mu.Unlock()
+	}
+	a.Git.RecentCommits = commits
+
+	uncommitted, err := gm.gitUncommittedCount(a.WorkDir)
+	if err != nil {
+		gm.mu.Lock()
+		gm.recordError(gitErrStatus, err)
+		gm.mu.Unlock()
+	}
+	a.Git.Uncommitted = uncommitted
+
+	added, removed, files, err := gm.gitDiffStats(a.WorkDir)
+	if err != nil {
+		gm.mu.Lock()
+		gm.recordError(gitErrDiff, err)
+		gm.mu.Unlock()
+	}
 	a.Git.LinesAdded = added
 	a.Git.LinesRemoved = removed
 	a.Git.FilesChanged = files
@@ -46,22 +129,25 @@ func (gm *GitMonitor) Collect(a *agent.Instance) {
 	a.LOC.Files = files
 }
 
-func isGitRepo(dir string) bool {
+func (gm *GitMonitor) isGitRepo(dir string) (bool, error) {
 	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree")
 	out, err := cmd.Output()
-	return err == nil && strings.TrimSpace(string(out)) == "true"
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
 }
 
-func gitCurrentBranch(dir string) string {
+func (gm *GitMonitor) gitCurrentBranch(dir string) (string, error) {
 	cmd := exec.Command("git", "-C", dir, "branch", "--show-current")
 	out, err := cmd.Output()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(string(out)), nil
 }
 
-func gitRecentCommits(dir string, count int) []agent.GitCommit {
+func (gm *GitMonitor) gitRecentCommits(dir string, count int) ([]agent.GitCommit, error) {
 	format := "%h|%s|%ct|%an"
 	cmd := exec.Command("git", "-C", dir, "log",
 		"--oneline",
@@ -71,7 +157,7 @@ func gitRecentCommits(dir string, count int) []agent.GitCommit {
 	)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	var commits []agent.GitCommit
@@ -93,34 +179,43 @@ func gitRecentCommits(dir string, count int) []agent.GitCommit {
 		})
 	}
 
-	return commits
+	return commits, nil
 }
 
-func gitUncommittedCount(dir string) int {
+func (gm *GitMonitor) gitUncommittedCount(dir string) (int, error) {
 	cmd := exec.Command("git", "-C", dir, "status", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) == 1 && lines[0] == "" {
-		return 0
+		return 0, nil
 	}
-	return len(lines)
+	return len(lines), nil
 }
 
-func gitDiffStats(dir string) (added, removed, files int) {
-	a1, r1, f1 := parseDiffStat(dir, "diff", "--stat")
-	a2, r2, f2 := parseDiffStat(dir, "diff", "--cached", "--stat")
-	return a1 + a2, r1 + r2, f1 + f2
+func (gm *GitMonitor) gitDiffStats(dir string) (added, removed, files int, err error) {
+	a1, r1, f1, err1 := gm.parseDiffStat(dir, "diff", "--stat")
+	a2, r2, f2, err2 := gm.parseDiffStat(dir, "diff", "--cached", "--stat")
+	if err1 != nil && err2 != nil {
+		return 0, 0, 0, err1
+	}
+	if err1 != nil {
+		err = err1
+	}
+	if err2 != nil {
+		err = err2
+	}
+	return a1 + a2, r1 + r2, f1 + f2, err
 }
 
-func parseDiffStat(dir string, args ...string) (added, removed, files int) {
+func (gm *GitMonitor) parseDiffStat(dir string, args ...string) (added, removed, files int, err error) {
 	fullArgs := append([]string{"-C", dir}, args...)
 	cmd := exec.Command("git", fullArgs...)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, 0, 0
+		return 0, 0, 0, err
 	}
 
 	numArgs := make([]string, 0, len(args)+2)
@@ -136,7 +231,7 @@ func parseDiffStat(dir string, args ...string) (added, removed, files int) {
 	out2, err := cmd2.Output()
 	if err != nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		return 0, 0, len(lines) - 1
+		return 0, 0, len(lines) - 1, err
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(out2)), "\n") {
@@ -154,5 +249,5 @@ func parseDiffStat(dir string, args ...string) (added, removed, files int) {
 		files++
 	}
 
-	return added, removed, files
+	return added, removed, files, nil
 }

@@ -29,21 +29,24 @@ func main() {
 	sessMon := monitor.NewSessionMonitor()
 	termMon := monitor.NewTerminalMonitor(50)
 	tokenMon := monitor.NewTokenMonitor()
-	gitMon := &monitor.GitMonitor{}
-	netMon := &monitor.NetworkMonitor{}
+	gitMon := monitor.NewGitMonitor()
+	netMon := monitor.NewNetworkMonitor()
 	secMon := monitor.NewSecurityMonitor(cfg.Security)
 	alertMon := monitor.NewAlertMonitor(monitor.AlertThresholds{
-		CPUWarning:      cfg.Alerts.CPUWarning,
-		CPUCritical:     cfg.Alerts.CPUCritical,
-		MemoryWarning:   cfg.Alerts.MemoryWarning,
-		MemoryCritical:  cfg.Alerts.MemoryCritical,
-		TokenWarning:    cfg.Alerts.TokenWarning,
-		TokenCritical:   cfg.Alerts.TokenCritical,
-		CostWarning:     cfg.Alerts.CostWarning,
-		CostCritical:    cfg.Alerts.CostCritical,
-		IdleMinutes:     cfg.Alerts.IdleMinutes,
-		CooldownMinutes: cfg.Alerts.CooldownMinutes,
-		MaxAlerts:       cfg.Alerts.MaxAlerts,
+		CPUWarning:        cfg.Alerts.CPUWarning,
+		CPUCritical:       cfg.Alerts.CPUCritical,
+		MemoryWarning:     cfg.Alerts.MemoryWarning,
+		MemoryCritical:    cfg.Alerts.MemoryCritical,
+		TokenWarning:      cfg.Alerts.TokenWarning,
+		TokenCritical:     cfg.Alerts.TokenCritical,
+		CostWarning:       cfg.Alerts.CostWarning,
+		CostCritical:      cfg.Alerts.CostCritical,
+		DailyBudgetUSD:    cfg.Alerts.DailyBudgetUSD,
+		MonthlyBudgetUSD:  cfg.Alerts.MonthlyBudgetUSD,
+		BudgetWarnPercent: cfg.Alerts.BudgetWarnPercent,
+		IdleMinutes:       cfg.Alerts.IdleMinutes,
+		CooldownMinutes:   cfg.Alerts.CooldownMinutes,
+		MaxAlerts:         cfg.Alerts.MaxAlerts,
 	})
 	localMon := monitor.NewLocalModelMonitor(cfg.LocalModels)
 
@@ -91,6 +94,7 @@ func main() {
 	}
 
 	tokenMon.Collect(agents)
+	alertMon.CheckFleet(agents)
 
 	localModels := localMon.GetModels()
 
@@ -122,6 +126,19 @@ func main() {
 		for _, lm := range localModels {
 			fmt.Printf("  %s (%s) - %s - %d model(s)\n",
 				lm.ServerName, lm.Status, lm.Endpoint, len(lm.Models))
+		}
+		fmt.Println()
+	}
+
+	health := monitor.BuildHealthReport(tokenMon, procMon, netMon, gitMon)
+	if !health.OverallHealthy {
+		fmt.Println("-- Monitor Health --")
+		fmt.Printf("  total errors: %d\n", health.TotalErrors)
+		for name, mh := range health.Monitors {
+			if mh.TotalErrors == 0 {
+				continue
+			}
+			fmt.Printf("  %s: %d error(s)\n", name, mh.TotalErrors)
 		}
 		fmt.Println()
 	}

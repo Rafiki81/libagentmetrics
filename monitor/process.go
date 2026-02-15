@@ -5,7 +5,13 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+)
+
+const (
+	processErrPS   = "ps"
+	processErrLsof = "lsof"
 )
 
 // ProcessMetrics holds CPU/memory metrics for a process.
@@ -20,26 +26,68 @@ type ProcessMetrics struct {
 
 // ProcessMonitor monitors metrics of specific PIDs.
 type ProcessMonitor struct {
-	pids []int
+	mu         sync.Mutex
+	pids       []int
+	errorStats map[string]MonitorErrorStats
+}
+
+func (pm *ProcessMonitor) ensureInit() {
+	if pm.errorStats == nil {
+		pm.errorStats = make(map[string]MonitorErrorStats)
+	}
 }
 
 // NewProcessMonitor creates a process monitor for given PIDs.
 func NewProcessMonitor(pids []int) *ProcessMonitor {
-	return &ProcessMonitor{pids: pids}
+	return &ProcessMonitor{pids: pids, errorStats: make(map[string]MonitorErrorStats)}
 }
 
 // SetPIDs updates the list of PIDs to monitor.
 func (pm *ProcessMonitor) SetPIDs(pids []int) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ensureInit()
 	pm.pids = pids
+}
+
+// GetErrorStats returns a snapshot of operational errors per source.
+func (pm *ProcessMonitor) GetErrorStats() map[string]MonitorErrorStats {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ensureInit()
+
+	stats := make(map[string]MonitorErrorStats, len(pm.errorStats))
+	for k, v := range pm.errorStats {
+		stats[k] = v
+	}
+	return stats
+}
+
+func (pm *ProcessMonitor) recordError(source string, err error) {
+	if err == nil {
+		return
+	}
+	pm.ensureInit()
+
+	stat := pm.errorStats[source]
+	stat.Count++
+	stat.LastError = err.Error()
+	stat.LastAt = time.Now()
+	pm.errorStats[source] = stat
 }
 
 // Collect gathers metrics for all tracked PIDs.
 func (pm *ProcessMonitor) Collect() ([]ProcessMetrics, error) {
-	if len(pm.pids) == 0 {
+	pm.mu.Lock()
+	pm.ensureInit()
+	pids := append([]int(nil), pm.pids...)
+	pm.mu.Unlock()
+
+	if len(pids) == 0 {
 		return nil, nil
 	}
 	var metrics []ProcessMetrics
-	for _, pid := range pm.pids {
+	for _, pid := range pids {
 		m, err := pm.collectOne(pid)
 		if err != nil {
 			continue
@@ -54,6 +102,9 @@ func (pm *ProcessMonitor) collectOne(pid int) (ProcessMetrics, error) {
 	cmd := exec.Command("ps", "-p", pidStr, "-o", "%cpu,%mem,rss")
 	out, err := cmd.Output()
 	if err != nil {
+		pm.mu.Lock()
+		pm.recordError(processErrPS, err)
+		pm.mu.Unlock()
 		return ProcessMetrics{}, fmt.Errorf("ps failed for pid %d: %w", pid, err)
 	}
 
@@ -70,7 +121,7 @@ func (pm *ProcessMonitor) collectOne(pid int) (ProcessMetrics, error) {
 	cpu, _ := strconv.ParseFloat(fields[0], 64)
 	rssKB, _ := strconv.ParseFloat(fields[2], 64)
 	memMB := rssKB / 1024.0
-	openFiles := countOpenFiles(pid)
+	openFiles := pm.countOpenFiles(pid)
 
 	return ProcessMetrics{
 		PID:       pid,
@@ -81,10 +132,13 @@ func (pm *ProcessMonitor) collectOne(pid int) (ProcessMetrics, error) {
 	}, nil
 }
 
-func countOpenFiles(pid int) int {
+func (pm *ProcessMonitor) countOpenFiles(pid int) int {
 	cmd := exec.Command("lsof", "-p", strconv.Itoa(pid))
 	out, err := cmd.Output()
 	if err != nil {
+		pm.mu.Lock()
+		pm.recordError(processErrLsof, err)
+		pm.mu.Unlock()
 		return 0
 	}
 	lines := strings.Split(string(out), "\n")

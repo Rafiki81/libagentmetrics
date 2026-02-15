@@ -70,18 +70,21 @@ type DetectionConfig struct {
 
 // AlertConfig controls alert thresholds and behavior.
 type AlertConfig struct {
-	Enabled         bool    `json:"enabled"`
-	CPUWarning      float64 `json:"cpu_warning"`
-	CPUCritical     float64 `json:"cpu_critical"`
-	MemoryWarning   float64 `json:"memory_warning_mb"`
-	MemoryCritical  float64 `json:"memory_critical_mb"`
-	TokenWarning    int64   `json:"token_warning"`
-	TokenCritical   int64   `json:"token_critical"`
-	CostWarning     float64 `json:"cost_warning_usd"`
-	CostCritical    float64 `json:"cost_critical_usd"`
-	IdleMinutes     int     `json:"idle_minutes"`
-	CooldownMinutes int     `json:"cooldown_minutes"`
-	MaxAlerts       int     `json:"max_alerts"`
+	Enabled           bool    `json:"enabled"`
+	CPUWarning        float64 `json:"cpu_warning"`
+	CPUCritical       float64 `json:"cpu_critical"`
+	MemoryWarning     float64 `json:"memory_warning_mb"`
+	MemoryCritical    float64 `json:"memory_critical_mb"`
+	TokenWarning      int64   `json:"token_warning"`
+	TokenCritical     int64   `json:"token_critical"`
+	CostWarning       float64 `json:"cost_warning_usd"`
+	CostCritical      float64 `json:"cost_critical_usd"`
+	DailyBudgetUSD    float64 `json:"daily_budget_usd"`
+	MonthlyBudgetUSD  float64 `json:"monthly_budget_usd"`
+	BudgetWarnPercent float64 `json:"budget_warn_percent"`
+	IdleMinutes       int     `json:"idle_minutes"`
+	CooldownMinutes   int     `json:"cooldown_minutes"`
+	MaxAlerts         int     `json:"max_alerts"`
 }
 
 // ThemeConfig controls UI colors (hex values).
@@ -196,6 +199,7 @@ func DefaultConfig() *Config {
 			MemoryWarning: 500, MemoryCritical: 1000,
 			TokenWarning: 500000, TokenCritical: 2000000,
 			CostWarning: 1.0, CostCritical: 5.0,
+			DailyBudgetUSD: 0, MonthlyBudgetUSD: 0, BudgetWarnPercent: 80,
 			IdleMinutes: 10, CooldownMinutes: 5, MaxAlerts: 100,
 		},
 		Security: SecurityConfig{

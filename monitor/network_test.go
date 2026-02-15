@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Rafiki81/libagentmetrics/agent"
@@ -164,4 +165,36 @@ func TestGetAllAgentConnections_EmptyPIDs(t *testing.T) {
 	if len(result2) != 0 {
 		t.Errorf("expected 0 results for empty PIDs, got %d", len(result2))
 	}
+}
+
+func TestNetworkMonitorErrorStats(t *testing.T) {
+	nm := NewNetworkMonitor()
+	nm.recordError(networkErrLsofConnections, errors.New("lsof failed"))
+	nm.recordError(networkErrLsofConnections, errors.New("lsof timeout"))
+
+	stats := nm.GetErrorStats()
+	conn, ok := stats[networkErrLsofConnections]
+	if !ok {
+		t.Fatal("expected lsof connection stats")
+	}
+	if conn.Count != 2 {
+		t.Fatalf("expected count 2, got %d", conn.Count)
+	}
+	if conn.LastError != "lsof timeout" {
+		t.Fatalf("expected last error lsof timeout, got %q", conn.LastError)
+	}
+
+	stats[networkErrLsofConnections] = MonitorErrorStats{}
+	stats2 := nm.GetErrorStats()
+	if stats2[networkErrLsofConnections].Count != 2 {
+		t.Fatal("expected internal stats unchanged after mutating snapshot")
+	}
+}
+
+func TestNetworkMonitorZeroValueSafe(t *testing.T) {
+	var nm NetworkMonitor
+	_ = nm.GetConnections(-1)
+	_ = nm.GetAllAgentConnections(nil)
+	_ = nm.GetListeningPorts()
+	_ = nm.GetErrorStats()
 }

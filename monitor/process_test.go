@@ -1,6 +1,9 @@
 package monitor
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestNewProcessMonitor(t *testing.T) {
 	pm := NewProcessMonitor([]int{1, 2, 3})
@@ -86,4 +89,37 @@ func TestProcessMetrics_Fields(t *testing.T) {
 	if m.MemoryMB != 100.0 {
 		t.Errorf("MemoryMB = %f, want 100.0", m.MemoryMB)
 	}
+}
+
+func TestProcessMonitorErrorStats(t *testing.T) {
+	pm := NewProcessMonitor(nil)
+	pm.recordError(processErrPS, errors.New("ps failed"))
+	pm.recordError(processErrPS, errors.New("ps timeout"))
+
+	stats := pm.GetErrorStats()
+	ps, ok := stats[processErrPS]
+	if !ok {
+		t.Fatal("expected ps error stats")
+	}
+	if ps.Count != 2 {
+		t.Fatalf("expected count 2, got %d", ps.Count)
+	}
+	if ps.LastError != "ps timeout" {
+		t.Fatalf("expected last error ps timeout, got %q", ps.LastError)
+	}
+
+	stats[processErrPS] = MonitorErrorStats{}
+	stats2 := pm.GetErrorStats()
+	if stats2[processErrPS].Count != 2 {
+		t.Fatal("expected internal stats unchanged after mutating snapshot")
+	}
+}
+
+func TestProcessMonitorZeroValueSafe(t *testing.T) {
+	var pm ProcessMonitor
+	_, err := pm.Collect()
+	if err != nil {
+		t.Fatalf("Collect() error on zero-value monitor: %v", err)
+	}
+	_ = pm.GetErrorStats()
 }

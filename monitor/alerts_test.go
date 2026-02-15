@@ -335,6 +335,68 @@ func TestAlertCount(t *testing.T) {
 	}
 }
 
+func TestCheckFleet_DailyBudgetWarning(t *testing.T) {
+	th := DefaultThresholds()
+	th.CooldownMinutes = 0
+	th.DailyBudgetUSD = 10
+	th.BudgetWarnPercent = 80
+	am := NewAlertMonitor(th)
+
+	agents := []agent.Instance{
+		{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: 4}},
+		{Info: agent.Info{ID: "a2", Name: "A2"}, Tokens: agent.TokenMetrics{EstCost: 4.5}},
+	}
+
+	am.CheckFleet(agents)
+	alerts := am.GetAlerts()
+	if len(alerts) != 1 {
+		t.Fatalf("got %d alerts, want 1", len(alerts))
+	}
+	if alerts[0].Level != agent.AlertWarning {
+		t.Fatalf("level = %s, want WARNING", alerts[0].Level)
+	}
+	if alerts[0].AgentID != "fleet" {
+		t.Fatalf("agent id = %s, want fleet", alerts[0].AgentID)
+	}
+}
+
+func TestCheckFleet_MonthlyBudgetCritical(t *testing.T) {
+	th := DefaultThresholds()
+	th.CooldownMinutes = 0
+	th.MonthlyBudgetUSD = 5
+	am := NewAlertMonitor(th)
+
+	agents := []agent.Instance{
+		{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: 6}},
+	}
+
+	am.CheckFleet(agents)
+	alerts := am.GetAlerts()
+	if len(alerts) != 1 {
+		t.Fatalf("got %d alerts, want 1", len(alerts))
+	}
+	if alerts[0].Level != agent.AlertCritical {
+		t.Fatalf("level = %s, want CRITICAL", alerts[0].Level)
+	}
+}
+
+func TestCheckFleet_NoBudgetsNoAlert(t *testing.T) {
+	th := DefaultThresholds()
+	th.CooldownMinutes = 0
+	th.DailyBudgetUSD = 0
+	th.MonthlyBudgetUSD = 0
+	am := NewAlertMonitor(th)
+
+	agents := []agent.Instance{
+		{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: 999}},
+	}
+
+	am.CheckFleet(agents)
+	if got := len(am.GetAlerts()); got != 0 {
+		t.Fatalf("got %d alerts, want 0", got)
+	}
+}
+
 func TestMaxAlerts_Truncation(t *testing.T) {
 	th := DefaultThresholds()
 	th.MaxAlerts = 5

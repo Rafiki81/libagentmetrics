@@ -10,38 +10,44 @@ import (
 
 // AlertThresholds defines configurable alert thresholds.
 type AlertThresholds struct {
-	CPUWarning      float64
-	CPUCritical     float64
-	MemoryWarning   float64
-	MemoryCritical  float64
-	TokenWarning    int64
-	TokenCritical   int64
-	CostWarning     float64
-	CostCritical    float64
-	IdleMinutes     int
-	CooldownMinutes int
-	MaxAlerts       int
-	CPUPercent      float64
-	MemoryMB        float64
-	TokensPerMin    int
-	CostPerHour     float64
-	ErrorRate       float64
+	CPUWarning        float64
+	CPUCritical       float64
+	MemoryWarning     float64
+	MemoryCritical    float64
+	TokenWarning      int64
+	TokenCritical     int64
+	CostWarning       float64
+	CostCritical      float64
+	DailyBudgetUSD    float64
+	MonthlyBudgetUSD  float64
+	BudgetWarnPercent float64
+	IdleMinutes       int
+	CooldownMinutes   int
+	MaxAlerts         int
+	CPUPercent        float64
+	MemoryMB          float64
+	TokensPerMin      int
+	CostPerHour       float64
+	ErrorRate         float64
 }
 
 // DefaultThresholds returns default alert thresholds.
 func DefaultThresholds() AlertThresholds {
 	return AlertThresholds{
-		CPUWarning:      80,
-		CPUCritical:     95,
-		MemoryWarning:   500,
-		MemoryCritical:  1000,
-		TokenWarning:    500000,
-		TokenCritical:   2000000,
-		CostWarning:     1.0,
-		CostCritical:    5.0,
-		IdleMinutes:     10,
-		CooldownMinutes: 5,
-		MaxAlerts:       100,
+		CPUWarning:        80,
+		CPUCritical:       95,
+		MemoryWarning:     500,
+		MemoryCritical:    1000,
+		TokenWarning:      500000,
+		TokenCritical:     2000000,
+		CostWarning:       1.0,
+		CostCritical:      5.0,
+		DailyBudgetUSD:    0,
+		MonthlyBudgetUSD:  0,
+		BudgetWarnPercent: 80,
+		IdleMinutes:       10,
+		CooldownMinutes:   5,
+		MaxAlerts:         100,
 	}
 }
 
@@ -108,6 +114,66 @@ func (am *AlertMonitor) Check(a *agent.Instance) {
 		if idleDur >= float64(am.thresholds.IdleMinutes) {
 			am.addAlert(a, agent.AlertInfo,
 				fmt.Sprintf("Agent idle for %.0f min", idleDur), "idle")
+		}
+	}
+}
+
+// CheckFleet evaluates aggregated token/cost usage for all agents against
+// optional budget thresholds. This is O(n) over agent slice and intended to be
+// called at the same cadence as other monitor checks.
+func (am *AlertMonitor) CheckFleet(agents []agent.Instance) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	if len(agents) == 0 {
+		return
+	}
+
+	if am.thresholds.DailyBudgetUSD <= 0 && am.thresholds.MonthlyBudgetUSD <= 0 {
+		return
+	}
+
+	warnPercent := am.thresholds.BudgetWarnPercent
+	if warnPercent <= 0 || warnPercent >= 100 {
+		warnPercent = 80
+	}
+
+	var totalCost float64
+	var totalTokens int64
+	for _, a := range agents {
+		totalCost += a.Tokens.EstCost
+		totalTokens += a.Tokens.TotalTokens
+	}
+
+	fleet := &agent.Instance{Info: agent.Info{ID: "fleet", Name: "Fleet"}}
+
+	if am.thresholds.DailyBudgetUSD > 0 {
+		usagePct := (totalCost / am.thresholds.DailyBudgetUSD) * 100
+		if usagePct >= 100 {
+			am.addAlert(fleet, agent.AlertCritical,
+				fmt.Sprintf("Daily budget exceeded: %s / %s (%.0f%%, %s tokens)",
+					FormatCost(totalCost), FormatCost(am.thresholds.DailyBudgetUSD), usagePct, FormatTokenCount(totalTokens)),
+				"budget_daily")
+		} else if usagePct >= warnPercent {
+			am.addAlert(fleet, agent.AlertWarning,
+				fmt.Sprintf("Daily budget high usage: %s / %s (%.0f%%, %s tokens)",
+					FormatCost(totalCost), FormatCost(am.thresholds.DailyBudgetUSD), usagePct, FormatTokenCount(totalTokens)),
+				"budget_daily")
+		}
+	}
+
+	if am.thresholds.MonthlyBudgetUSD > 0 {
+		usagePct := (totalCost / am.thresholds.MonthlyBudgetUSD) * 100
+		if usagePct >= 100 {
+			am.addAlert(fleet, agent.AlertCritical,
+				fmt.Sprintf("Monthly budget exceeded: %s / %s (%.0f%%, %s tokens)",
+					FormatCost(totalCost), FormatCost(am.thresholds.MonthlyBudgetUSD), usagePct, FormatTokenCount(totalTokens)),
+				"budget_monthly")
+		} else if usagePct >= warnPercent {
+			am.addAlert(fleet, agent.AlertWarning,
+				fmt.Sprintf("Monthly budget high usage: %s / %s (%.0f%%, %s tokens)",
+					FormatCost(totalCost), FormatCost(am.thresholds.MonthlyBudgetUSD), usagePct, FormatTokenCount(totalTokens)),
+				"budget_monthly")
 		}
 	}
 }

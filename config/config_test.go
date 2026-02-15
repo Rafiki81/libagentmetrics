@@ -35,6 +35,15 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Alerts.MaxAlerts != 100 {
 		t.Errorf("MaxAlerts = %d, want 100", cfg.Alerts.MaxAlerts)
 	}
+	if cfg.Alerts.DailyBudgetUSD != 0 {
+		t.Errorf("DailyBudgetUSD = %f, want 0", cfg.Alerts.DailyBudgetUSD)
+	}
+	if cfg.Alerts.MonthlyBudgetUSD != 0 {
+		t.Errorf("MonthlyBudgetUSD = %f, want 0", cfg.Alerts.MonthlyBudgetUSD)
+	}
+	if cfg.Alerts.BudgetWarnPercent != 80 {
+		t.Errorf("BudgetWarnPercent = %f, want 80", cfg.Alerts.BudgetWarnPercent)
+	}
 
 	// Security
 	if !cfg.Security.Enabled {

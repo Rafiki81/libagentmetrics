@@ -81,7 +81,7 @@ func main() {
 
     // Collect metrics
     sessMon := monitor.NewSessionMonitor()
-    gitMon := &monitor.GitMonitor{}
+    gitMon := monitor.NewGitMonitor()
     tokenMon := monitor.NewTokenMonitor()
 
     for i := range agents {
@@ -129,8 +129,8 @@ func main() {
 | `SessionMonitor` | `NewSessionMonitor()` | Uptime, active/idle time |
 | `TerminalMonitor` | `NewTerminalMonitor(maxHistory)` | Commands spawned by the agent |
 | `TokenMonitor` | `NewTokenMonitor()` | Tokens from logs, DB or network |
-| `GitMonitor` | `&GitMonitor{}` | Branch, commits, diff stats |
-| `NetworkMonitor` | `&NetworkMonitor{}` | Active network connections |
+| `GitMonitor` | `NewGitMonitor()` | Branch, commits, diff stats |
+| `NetworkMonitor` | `NewNetworkMonitor()` | Active network connections |
 | `FileWatcher` | `NewFileWatcher()` | Directory change polling |
 | `AlertMonitor` | `NewAlertMonitor(thresholds)` | Threshold-based alerts |
 | `SecurityMonitor` | `NewSecurityMonitor(cfg)` | Suspicious activity detection |
@@ -146,6 +146,60 @@ monitor.FormatDuration(time.Duration) string // "1h 23m", "45s"
 monitor.FormatCost(float64) string          // "$0.0234"
 monitor.EstimateCost(model, in, out) float64
 ```
+
+## Performance Budget
+
+This library is designed to be lightweight, but some monitors invoke system commands.
+To keep overhead predictable, use different sampling intervals by monitor cost:
+
+- **Fast path (every 2-3s):** `SessionMonitor`, `AlertMonitor`, `TokenMonitor` (when logs are available).
+- **Medium path (every 5-10s):** `ProcessMonitor`, `TerminalMonitor`, `NetworkMonitor`.
+- **Slow path (every 15-30s):** `GitMonitor`, `SecurityMonitor`, `LocalModelMonitor`.
+
+### Practical Recommendations
+
+- Reuse monitor instances across cycles (avoid re-creating monitors in tight loops).
+- Call `detector.Scan()` on a slower cadence than lightweight metric refresh if agent churn is low.
+- Prefer constructors (`NewGitMonitor`, `NewNetworkMonitor`, etc.) for clearer intent and internal state reuse.
+- For near-real-time UIs, run a split loop: fast loop for CPU/session/tokens and slow loop for git/network/security.
+- If running on battery-constrained environments, increase slow-path interval first.
+
+### Notes on Cost Drivers
+
+- `TokenMonitor` may use `sqlite3`, `nettop`, and `lsof` fallbacks depending on available sources.
+- `NetworkMonitor` and `ProcessMonitor` rely on `lsof`/`ps` and are usually the first knobs to tune for lower overhead.
+- `GitMonitor` cost depends on repository size and uncommitted diff volume.
+
+## Budget Configuration (Daily/Monthly)
+
+You can enable fleet-level budget alerts (cost + token context) without adding extra monitor loops.
+
+### `config.json` example
+
+```json
+{
+    "alerts": {
+        "daily_budget_usd": 15,
+        "monthly_budget_usd": 300,
+        "budget_warn_percent": 80
+    }
+}
+```
+
+### Usage
+
+- Keep your per-agent checks as usual with `alertMon.Check(&agent)`.
+- Add one aggregated call after token collection:
+
+```go
+tokenMon.Collect(agents)
+alertMon.CheckFleet(agents)
+```
+
+When enabled, this produces warning/critical alerts for:
+
+- Daily budget high usage / exceeded.
+- Monthly budget high usage / exceeded.
 
 ## Supported Agents
 

@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,6 +18,28 @@ import (
 	"github.com/Rafiki81/libagentmetrics/agent"
 )
 
+const (
+	tokenCommandTimeout     = 3 * time.Second
+	tokenStateTTL           = 24 * time.Hour
+	tokenPruneCheckInterval = 5 * time.Minute
+)
+
+const (
+	tokenErrHomeDir     = "home_dir"
+	tokenErrCopilotLog  = "copilot_log"
+	tokenErrClaudeJSONL = "claude_jsonl"
+	tokenErrCursorDB    = "cursor_db"
+	tokenErrAiderLog    = "aider_log"
+	tokenErrNetwork     = "network"
+)
+
+// MonitorErrorStats represents aggregated operational errors for a monitor source.
+type MonitorErrorStats struct {
+	Count     int       `json:"count"`
+	LastError string    `json:"last_error"`
+	LastAt    time.Time `json:"last_at"`
+}
+
 // TokenMonitor collects token usage from multiple sources per agent.
 type TokenMonitor struct {
 	mu sync.Mutex
@@ -30,6 +53,49 @@ type TokenMonitor struct {
 	claudeLogOffsets map[string]int64
 	// Aider: last read offset per history file
 	aiderLogOffsets map[string]int64
+	// Last seen timestamps for path-based offsets
+	copilotLogSeen map[string]time.Time
+	claudeLogSeen  map[string]time.Time
+	aiderLogSeen   map[string]time.Time
+	// Last seen timestamps for PID-based network state
+	prevBytesSeen map[int]time.Time
+	// Last state pruning time
+	lastPruneAt time.Time
+	// Error observability state per source
+	errorStats map[string]MonitorErrorStats
+}
+
+func (tm *TokenMonitor) ensureInit() {
+	if tm.data == nil {
+		tm.data = make(map[string]*agent.TokenMetrics)
+	}
+	if tm.prevBytes == nil {
+		tm.prevBytes = make(map[int]int64)
+	}
+	if tm.copilotLogOffsets == nil {
+		tm.copilotLogOffsets = make(map[string]int64)
+	}
+	if tm.claudeLogOffsets == nil {
+		tm.claudeLogOffsets = make(map[string]int64)
+	}
+	if tm.aiderLogOffsets == nil {
+		tm.aiderLogOffsets = make(map[string]int64)
+	}
+	if tm.copilotLogSeen == nil {
+		tm.copilotLogSeen = make(map[string]time.Time)
+	}
+	if tm.claudeLogSeen == nil {
+		tm.claudeLogSeen = make(map[string]time.Time)
+	}
+	if tm.aiderLogSeen == nil {
+		tm.aiderLogSeen = make(map[string]time.Time)
+	}
+	if tm.prevBytesSeen == nil {
+		tm.prevBytesSeen = make(map[int]time.Time)
+	}
+	if tm.errorStats == nil {
+		tm.errorStats = make(map[string]MonitorErrorStats)
+	}
 }
 
 // NewTokenMonitor creates a new token monitor.
@@ -40,6 +106,11 @@ func NewTokenMonitor() *TokenMonitor {
 		copilotLogOffsets: make(map[string]int64),
 		claudeLogOffsets:  make(map[string]int64),
 		aiderLogOffsets:   make(map[string]int64),
+		copilotLogSeen:    make(map[string]time.Time),
+		claudeLogSeen:     make(map[string]time.Time),
+		aiderLogSeen:      make(map[string]time.Time),
+		prevBytesSeen:     make(map[int]time.Time),
+		errorStats:        make(map[string]MonitorErrorStats),
 	}
 }
 
@@ -49,6 +120,13 @@ func NewTokenMonitor() *TokenMonitor {
 func (tm *TokenMonitor) Collect(agents []agent.Instance) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	tm.ensureInit()
+
+	now := time.Now()
+	if tm.lastPruneAt.IsZero() || now.Sub(tm.lastPruneAt) >= tokenPruneCheckInterval {
+		tm.pruneState(agents, now)
+		tm.lastPruneAt = now
+	}
 
 	for i := range agents {
 		a := &agents[i]
@@ -85,10 +163,37 @@ func (tm *TokenMonitor) Collect(agents []agent.Instance) {
 func (tm *TokenMonitor) GetMetrics(agentID string) agent.TokenMetrics {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	tm.ensureInit()
 	if m, ok := tm.data[agentID]; ok {
 		return *m
 	}
 	return agent.TokenMetrics{}
+}
+
+// GetErrorStats returns a snapshot of operational errors per data source.
+func (tm *TokenMonitor) GetErrorStats() map[string]MonitorErrorStats {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.ensureInit()
+
+	stats := make(map[string]MonitorErrorStats, len(tm.errorStats))
+	for k, v := range tm.errorStats {
+		stats[k] = v
+	}
+	return stats
+}
+
+func (tm *TokenMonitor) recordError(source string, err error) {
+	if err == nil {
+		return
+	}
+	tm.ensureInit()
+
+	stat := tm.errorStats[source]
+	stat.Count++
+	stat.LastError = err.Error()
+	stat.LastAt = time.Now()
+	tm.errorStats[source] = stat
 }
 
 // ---------- Copilot: parse VS Code extension logs ----------
@@ -98,7 +203,12 @@ var copilotReqRe = regexp.MustCompile(
 )
 
 func (tm *TokenMonitor) collectCopilot(a *agent.Instance) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		tm.recordError(tokenErrHomeDir, err)
+		tm.collectFromNetwork(a)
+		return
+	}
 	m := tm.data[a.Info.ID]
 
 	logsBase := filepath.Join(home, "Library", "Application Support", "Code", "logs")
@@ -136,13 +246,17 @@ func (tm *TokenMonitor) collectCopilot(a *agent.Instance) {
 func (tm *TokenMonitor) parseCopilotLog(logPath string, m *agent.TokenMetrics) int {
 	f, err := os.Open(logPath)
 	if err != nil {
+		tm.recordError(tokenErrCopilotLog, err)
 		return 0
 	}
 	defer f.Close()
+	tm.copilotLogSeen[logPath] = time.Now()
 
 	offset, exists := tm.copilotLogOffsets[logPath]
 	if exists {
-		f.Seek(offset, 0)
+		if _, err := f.Seek(offset, 0); err != nil {
+			tm.recordError(tokenErrCopilotLog, err)
+		}
 	}
 
 	scanner := bufio.NewScanner(f)
@@ -186,8 +300,16 @@ func (tm *TokenMonitor) parseCopilotLog(logPath string, m *agent.TokenMetrics) i
 		m.TotalTokens = m.InputTokens + m.OutputTokens
 	}
 
-	pos, _ := f.Seek(0, 1)
-	tm.copilotLogOffsets[logPath] = pos
+	pos, err := f.Seek(0, 1)
+	if err != nil {
+		tm.recordError(tokenErrCopilotLog, err)
+	} else {
+		tm.copilotLogOffsets[logPath] = pos
+	}
+
+	if err := scanner.Err(); err != nil {
+		tm.recordError(tokenErrCopilotLog, err)
+	}
 
 	if m.RequestCount > 0 && !m.LastRequestAt.IsZero() {
 		elapsed := time.Since(m.LastRequestAt).Seconds()
@@ -204,7 +326,12 @@ func (tm *TokenMonitor) parseCopilotLog(logPath string, m *agent.TokenMetrics) i
 // ---------- Claude Code: parse conversation JSONL files ----------
 
 func (tm *TokenMonitor) collectClaude(a *agent.Instance) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		tm.recordError(tokenErrHomeDir, err)
+		tm.collectFromNetwork(a)
+		return
+	}
 	m := tm.data[a.Info.ID]
 
 	claudeDir := filepath.Join(home, ".claude")
@@ -252,13 +379,17 @@ type claudeMessage struct {
 func (tm *TokenMonitor) parseClaudeJSONL(path string, m *agent.TokenMetrics) int {
 	f, err := os.Open(path)
 	if err != nil {
+		tm.recordError(tokenErrClaudeJSONL, err)
 		return 0
 	}
 	defer f.Close()
+	tm.claudeLogSeen[path] = time.Now()
 
 	offset, exists := tm.claudeLogOffsets[path]
 	if exists {
-		f.Seek(offset, 0)
+		if _, err := f.Seek(offset, 0); err != nil {
+			tm.recordError(tokenErrClaudeJSONL, err)
+		}
 	}
 
 	scanner := bufio.NewScanner(f)
@@ -289,8 +420,16 @@ func (tm *TokenMonitor) parseClaudeJSONL(path string, m *agent.TokenMetrics) int
 		}
 	}
 
-	pos, _ := f.Seek(0, 1)
-	tm.claudeLogOffsets[path] = pos
+	pos, err := f.Seek(0, 1)
+	if err != nil {
+		tm.recordError(tokenErrClaudeJSONL, err)
+	} else {
+		tm.claudeLogOffsets[path] = pos
+	}
+
+	if err := scanner.Err(); err != nil {
+		tm.recordError(tokenErrClaudeJSONL, err)
+	}
 
 	if m.RequestCount > 0 && !m.LastRequestAt.IsZero() {
 		elapsed := time.Since(m.LastRequestAt).Seconds()
@@ -307,7 +446,12 @@ func (tm *TokenMonitor) parseClaudeJSONL(path string, m *agent.TokenMetrics) int
 // ---------- Cursor: parse SQLite DB ----------
 
 func (tm *TokenMonitor) collectCursor(a *agent.Instance) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		tm.recordError(tokenErrHomeDir, err)
+		tm.collectFromNetwork(a)
+		return
+	}
 	m := tm.data[a.Info.ID]
 
 	dbPath := filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
@@ -338,16 +482,53 @@ func (tm *TokenMonitor) collectCursor(a *agent.Instance) {
 }
 
 func (tm *TokenMonitor) parseCursorDB(dbPath string, m *agent.TokenMetrics) bool {
-	cmd := exec.Command("sqlite3", dbPath,
+	ctx, cancel := context.WithTimeout(context.Background(), tokenCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sqlite3", dbPath,
 		"SELECT value FROM cursorDiskKV WHERE key LIKE 'composerData:%' ORDER BY length(value) DESC LIMIT 10")
 	out, err := cmd.Output()
 	if err != nil {
+		tm.recordError(tokenErrCursorDB, err)
 		return false
 	}
 
 	lines := strings.Split(string(out), "\n")
-	totalRequests := 0
-	var lastModel string
+	parsed := parseCursorDBLines(lines)
+
+	if parsed.RequestCount > 0 || parsed.InputTokens > 0 || parsed.OutputTokens > 0 {
+		m.InputTokens = parsed.InputTokens
+		m.OutputTokens = parsed.OutputTokens
+		m.RequestCount = parsed.RequestCount
+		m.TotalTokens = m.InputTokens + m.OutputTokens
+		if parsed.LastModel != "" {
+			m.LastModel = parsed.LastModel
+		} else {
+			m.LastModel = "cursor"
+		}
+		m.LastRequestAt = time.Now()
+
+		if m.InputTokens == 0 && m.RequestCount > 0 {
+			m.InputTokens = int64(m.RequestCount) * 500
+			m.OutputTokens = int64(m.RequestCount) * 300
+			m.TotalTokens = m.InputTokens + m.OutputTokens
+			m.Source = agent.TokenSourceEstimated
+		}
+		return true
+	}
+
+	return false
+}
+
+type cursorDBParseResult struct {
+	InputTokens  int64
+	OutputTokens int64
+	RequestCount int
+	LastModel    string
+}
+
+func parseCursorDBLines(lines []string) cursorDBParseResult {
+	result := cursorDBParseResult{}
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -364,12 +545,12 @@ func (tm *TokenMonitor) parseCursorDB(dbPath string, m *agent.TokenMetrics) bool
 			if usageMap, ok := usage.(map[string]interface{}); ok && len(usageMap) > 0 {
 				if input, ok := usageMap["inputTokens"]; ok {
 					if v, ok := input.(float64); ok {
-						m.InputTokens += int64(v)
+						result.InputTokens += int64(v)
 					}
 				}
 				if output, ok := usageMap["outputTokens"]; ok {
 					if v, ok := output.(float64); ok {
-						m.OutputTokens += int64(v)
+						result.OutputTokens += int64(v)
 					}
 				}
 			}
@@ -379,7 +560,7 @@ func (tm *TokenMonitor) parseCursorDB(dbPath string, m *agent.TokenMetrics) bool
 			if mcMap, ok := mc.(map[string]interface{}); ok {
 				if mn, ok := mcMap["modelName"]; ok {
 					if name, ok := mn.(string); ok && name != "" && name != "default,default,default,default" {
-						lastModel = name
+						result.LastModel = name
 					}
 				}
 			}
@@ -387,31 +568,12 @@ func (tm *TokenMonitor) parseCursorDB(dbPath string, m *agent.TokenMetrics) bool
 
 		if convMap, ok := data["conversationMap"]; ok {
 			if cm, ok := convMap.(map[string]interface{}); ok {
-				totalRequests += len(cm)
+				result.RequestCount += len(cm)
 			}
 		}
 	}
 
-	if totalRequests > 0 || m.InputTokens > 0 {
-		m.RequestCount = totalRequests
-		m.TotalTokens = m.InputTokens + m.OutputTokens
-		if lastModel != "" {
-			m.LastModel = lastModel
-		} else {
-			m.LastModel = "cursor"
-		}
-		m.LastRequestAt = time.Now()
-
-		if m.InputTokens == 0 && totalRequests > 0 {
-			m.InputTokens = int64(totalRequests) * 500
-			m.OutputTokens = int64(totalRequests) * 300
-			m.TotalTokens = m.InputTokens + m.OutputTokens
-			m.Source = agent.TokenSourceEstimated
-		}
-		return true
-	}
-
-	return false
+	return result
 }
 
 // ---------- Aider: parse chat history ----------
@@ -431,7 +593,12 @@ func (tm *TokenMonitor) collectAider(a *agent.Instance) {
 		)
 	}
 
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		tm.recordError(tokenErrHomeDir, err)
+		tm.collectFromNetwork(a)
+		return
+	}
 	searchPaths = append(searchPaths,
 		filepath.Join(home, ".aider.chat.history.md"),
 		filepath.Join(home, ".aider.logs", "aider.log"),
@@ -452,13 +619,17 @@ func (tm *TokenMonitor) collectAider(a *agent.Instance) {
 func (tm *TokenMonitor) parseAiderHistory(path string, m *agent.TokenMetrics) bool {
 	f, err := os.Open(path)
 	if err != nil {
+		tm.recordError(tokenErrAiderLog, err)
 		return false
 	}
 	defer f.Close()
+	tm.aiderLogSeen[path] = time.Now()
 
 	offset, exists := tm.aiderLogOffsets[path]
 	if exists {
-		f.Seek(offset, 0)
+		if _, err := f.Seek(offset, 0); err != nil {
+			tm.recordError(tokenErrAiderLog, err)
+		}
 	}
 
 	scanner := bufio.NewScanner(f)
@@ -484,8 +655,16 @@ func (tm *TokenMonitor) parseAiderHistory(path string, m *agent.TokenMetrics) bo
 		found = true
 	}
 
-	pos, _ := f.Seek(0, 1)
-	tm.aiderLogOffsets[path] = pos
+	pos, err := f.Seek(0, 1)
+	if err != nil {
+		tm.recordError(tokenErrAiderLog, err)
+	} else {
+		tm.aiderLogOffsets[path] = pos
+	}
+
+	if err := scanner.Err(); err != nil {
+		tm.recordError(tokenErrAiderLog, err)
+	}
 
 	return found
 }
@@ -512,7 +691,10 @@ func parseTokenCount(s string) int64 {
 func (tm *TokenMonitor) collectFromNetwork(a *agent.Instance) {
 	m := tm.data[a.Info.ID]
 
-	bytes := getNetworkBytesForPID(a.PID)
+	bytes, err := getNetworkBytesForPID(a.PID)
+	if err != nil {
+		tm.recordError(tokenErrNetwork, err)
+	}
 
 	if bytes <= 0 {
 		return
@@ -521,6 +703,7 @@ func (tm *TokenMonitor) collectFromNetwork(a *agent.Instance) {
 	prevBytes := tm.prevBytes[a.PID]
 	delta := bytes - prevBytes
 	tm.prevBytes[a.PID] = bytes
+	tm.prevBytesSeen[a.PID] = time.Now()
 
 	if delta <= 0 || prevBytes == 0 {
 		return
@@ -539,12 +722,19 @@ func (tm *TokenMonitor) collectFromNetwork(a *agent.Instance) {
 	m.TokensPerSec = float64(estimatedTokens) / 2.0
 }
 
-func getNetworkBytesForPID(pid int) int64 {
-	cmd := exec.Command("nettop", "-p", strconv.Itoa(pid), "-L", "1", "-J", "bytes_in,bytes_out", "-x")
+func getNetworkBytesForPID(pid int) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), tokenCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "nettop", "-p", strconv.Itoa(pid), "-L", "1", "-J", "bytes_in,bytes_out", "-x")
 	cmd.Env = append(os.Environ(), "TERM=dumb")
 	out, err := cmd.Output()
 	if err != nil {
-		return estimateFromLsof(pid)
+		bytes, fallbackErr := estimateFromLsof(pid)
+		if fallbackErr != nil {
+			return 0, fmt.Errorf("nettop failed: %w; lsof fallback failed: %v", err, fallbackErr)
+		}
+		return bytes, nil
 	}
 
 	lines := strings.Split(string(out), "\n")
@@ -561,14 +751,17 @@ func getNetworkBytesForPID(pid int) int64 {
 		}
 	}
 
-	return totalBytes
+	return totalBytes, nil
 }
 
-func estimateFromLsof(pid int) int64 {
-	cmd := exec.Command("lsof", "-i", "-n", "-P", "-p", strconv.Itoa(pid))
+func estimateFromLsof(pid int) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), tokenCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lsof", "-i", "-n", "-P", "-p", strconv.Itoa(pid))
 	out, err := cmd.Output()
 	if err != nil {
-		return 0
+		return 0, err
 	}
 
 	lines := strings.Split(string(out), "\n")
@@ -579,7 +772,45 @@ func estimateFromLsof(pid int) int64 {
 		}
 	}
 
-	return int64(established * 500)
+	return int64(established * 500), nil
+}
+
+func (tm *TokenMonitor) pruneState(agents []agent.Instance, now time.Time) {
+	activePIDs := make(map[int]struct{}, len(agents))
+	for _, a := range agents {
+		if a.PID > 0 {
+			activePIDs[a.PID] = struct{}{}
+		}
+	}
+
+	for pid, lastSeen := range tm.prevBytesSeen {
+		if _, active := activePIDs[pid]; active {
+			continue
+		}
+		if now.Sub(lastSeen) > tokenStateTTL {
+			delete(tm.prevBytesSeen, pid)
+			delete(tm.prevBytes, pid)
+		}
+	}
+
+	prunePathOffsetMap(tm.copilotLogOffsets, tm.copilotLogSeen, now)
+	prunePathOffsetMap(tm.claudeLogOffsets, tm.claudeLogSeen, now)
+	prunePathOffsetMap(tm.aiderLogOffsets, tm.aiderLogSeen, now)
+}
+
+func prunePathOffsetMap(offsets map[string]int64, seen map[string]time.Time, now time.Time) {
+	for path, lastSeen := range seen {
+		if now.Sub(lastSeen) > tokenStateTTL {
+			delete(seen, path)
+			delete(offsets, path)
+		}
+	}
+
+	for path := range offsets {
+		if _, ok := seen[path]; !ok {
+			delete(offsets, path)
+		}
+	}
 }
 
 // FormatTokenCount formats a token count for display.
