@@ -44,6 +44,8 @@ func main() {
 		DailyBudgetUSD:    cfg.Alerts.DailyBudgetUSD,
 		MonthlyBudgetUSD:  cfg.Alerts.MonthlyBudgetUSD,
 		BudgetWarnPercent: cfg.Alerts.BudgetWarnPercent,
+		BurnRateWarning:   cfg.Alerts.BurnRateWarning,
+		BurnRateCritical:  cfg.Alerts.BurnRateCritical,
 		IdleMinutes:       cfg.Alerts.IdleMinutes,
 		CooldownMinutes:   cfg.Alerts.CooldownMinutes,
 		MaxAlerts:         cfg.Alerts.MaxAlerts,
@@ -161,6 +163,7 @@ func printAgent(a agent.Instance) {
 			monitor.FormatTokenCount(a.Tokens.InputTokens),
 			monitor.FormatTokenCount(a.Tokens.OutputTokens),
 			a.Tokens.EstCost)
+		fmt.Printf("  Signal: confidence %.2f (source: %s)\n", a.Tokens.Confidence, a.Tokens.Source)
 		if a.Tokens.LastModel != "" {
 			fmt.Printf("  Model:  %s\n", a.Tokens.LastModel)
 		}

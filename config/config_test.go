@@ -44,6 +44,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Alerts.BudgetWarnPercent != 80 {
 		t.Errorf("BudgetWarnPercent = %f, want 80", cfg.Alerts.BudgetWarnPercent)
 	}
+	if cfg.Alerts.BurnRateWarning != 2.0 {
+		t.Errorf("BurnRateWarning = %f, want 2.0", cfg.Alerts.BurnRateWarning)
+	}
+	if cfg.Alerts.BurnRateCritical != 3.0 {
+		t.Errorf("BurnRateCritical = %f, want 3.0", cfg.Alerts.BurnRateCritical)
+	}
 
 	// Security
 	if !cfg.Security.Enabled {

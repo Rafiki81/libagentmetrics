@@ -202,3 +202,23 @@ func TestTokenMonitorZeroValueSafe(t *testing.T) {
 	_ = tm.GetMetrics("unknown")
 	_ = tm.GetErrorStats()
 }
+
+func TestTokenConfidence(t *testing.T) {
+	tests := []struct {
+		source agent.TokenSource
+		want   float64
+	}{
+		{agent.TokenSourceLog, 0.95},
+		{agent.TokenSourceDB, 0.95},
+		{agent.TokenSourceLocalAPI, 0.95},
+		{agent.TokenSourceEstimated, 0.70},
+		{agent.TokenSourceNetwork, 0.60},
+		{agent.TokenSourceNone, 0.0},
+	}
+
+	for _, tt := range tests {
+		if got := tokenConfidence(tt.source); got != tt.want {
+			t.Fatalf("tokenConfidence(%q) = %.2f, want %.2f", tt.source, got, tt.want)
+		}
+	}
+}

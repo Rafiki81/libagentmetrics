@@ -397,6 +397,34 @@ func TestCheckFleet_NoBudgetsNoAlert(t *testing.T) {
 	}
 }
 
+func TestCheckFleet_DailyBurnRateWarning(t *testing.T) {
+	th := DefaultThresholds()
+	th.CooldownMinutes = 0
+	th.DailyBudgetUSD = 24
+	th.BurnRateWarning = 1.2
+	th.BurnRateCritical = 2.0
+	am := NewAlertMonitor(th)
+
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	elapsed := now.Sub(startOfDay).Seconds()
+	if elapsed < 10*60 {
+		t.Skip("day elapsed too short for deterministic burn-rate test")
+	}
+	expected := th.DailyBudgetUSD * (elapsed / (24 * 60 * 60.0))
+	totalCost := expected * 1.3
+
+	agents := []agent.Instance{{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: totalCost}}}
+	am.CheckFleet(agents)
+	alerts := am.GetAlerts()
+	if len(alerts) != 1 {
+		t.Fatalf("got %d alerts, want 1", len(alerts))
+	}
+	if alerts[0].Level != agent.AlertWarning {
+		t.Fatalf("level = %s, want WARNING", alerts[0].Level)
+	}
+}
+
 func TestMaxAlerts_Truncation(t *testing.T) {
 	th := DefaultThresholds()
 	th.MaxAlerts = 5

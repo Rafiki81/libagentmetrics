@@ -16,7 +16,7 @@ A Go library for real-time detection, monitoring, and analysis of AI coding agen
 
 - **Auto-detection** of 12 agents: Claude Code, GitHub Copilot, Cursor, Aider, Cody, Continue.dev, Windsurf, Gemini CLI, OpenAI Codex CLI, Open Codex, MoltBot, Codel.
 - **Process metrics** — CPU, memory, open files per PID.
-- **Tokens & cost** — Real log parsing (Copilot, Claude JSONL, Cursor SQLite, Aider) with network-based estimation fallback. Per-model cost calculation.
+- **Tokens & cost** — Real log parsing (Copilot, Claude JSONL, Cursor SQLite, Aider) with network-based estimation fallback, plus per-metric confidence score. Per-model cost calculation.
 - **Git activity** — Branch, recent commits, diff stats, lines of code.
 - **Terminal** — Detection of commands spawned by agent child processes.
 - **Session** — Active vs. idle time based on CPU usage.
@@ -188,7 +188,9 @@ You can enable fleet-level budget alerts (cost + token context) without adding e
     "alerts": {
         "daily_budget_usd": 15,
         "monthly_budget_usd": 300,
-        "budget_warn_percent": 80
+        "budget_warn_percent": 80,
+        "burn_rate_warning": 2.0,
+        "burn_rate_critical": 3.0
     }
 }
 ```
@@ -207,6 +209,9 @@ When enabled, this produces warning/critical alerts for:
 
 - Daily budget high usage / exceeded.
 - Monthly budget high usage / exceeded.
+- Daily/monthly burn-rate above expected pace.
+
+Token metrics also expose `confidence` (`0.0-1.0`) based on source reliability (`log/db > estimated > network`).
 
 ## Supported Agents
 
