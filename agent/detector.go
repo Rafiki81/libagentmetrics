@@ -29,9 +29,7 @@ type processInfo struct {
 	CmdFull string
 }
 
-// Scan lists running processes via "ps aux", matches them against the
-// registry, and returns one Instance per detected agent. Multiple processes
-// for the same agent are merged (highest CPU, summed memory).
+// Scan scans running processes and returns detected agent instances.
 func (d *Detector) Scan() ([]Instance, error) {
 	procs, err := d.listProcesses()
 	if err != nil {
