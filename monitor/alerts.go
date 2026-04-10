@@ -62,6 +62,7 @@ type AlertMonitor struct {
 	alerts     []agent.Alert
 	maxAlerts  int
 	alerted    map[string]time.Time
+	now        func() time.Time
 }
 
 // NewAlertMonitor creates a new alert monitor.
@@ -75,7 +76,15 @@ func NewAlertMonitor(thresholds AlertThresholds) *AlertMonitor {
 		alerts:     make([]agent.Alert, 0),
 		maxAlerts:  maxAlerts,
 		alerted:    make(map[string]time.Time),
+		now:        time.Now,
 	}
+}
+
+func (am *AlertMonitor) timeNow() time.Time {
+	if am.now != nil {
+		return am.now()
+	}
+	return time.Now()
 }
 
 // Check evaluates an agent's CPU, memory, token count, cost, and idle time
@@ -114,7 +123,7 @@ func (am *AlertMonitor) Check(a *agent.Instance) {
 	}
 
 	if am.thresholds.IdleMinutes > 0 && !a.Session.LastActiveAt.IsZero() {
-		idleDur := time.Since(a.Session.LastActiveAt).Minutes()
+		idleDur := am.timeNow().Sub(a.Session.LastActiveAt).Minutes()
 		if idleDur >= float64(am.thresholds.IdleMinutes) {
 			am.addAlert(a, agent.AlertInfo,
 				fmt.Sprintf("Agent idle for %.0f min", idleDur), "idle")
@@ -150,7 +159,7 @@ func (am *AlertMonitor) CheckFleet(agents []agent.Instance) {
 	}
 
 	fleet := &agent.Instance{Info: agent.Info{ID: "fleet", Name: "Fleet"}}
-	now := time.Now()
+	now := am.timeNow()
 	burnWarn := am.thresholds.BurnRateWarning
 	burnCritical := am.thresholds.BurnRateCritical
 	if burnWarn <= 0 {
@@ -253,23 +262,24 @@ func (am *AlertMonitor) addAlert(a *agent.Instance, level agent.AlertLevel, msg,
 	if cooldown <= 0 {
 		cooldown = 5 * time.Minute
 	}
+	now := am.timeNow()
 
 	key := a.Info.ID + ":" + alertType
 	if last, ok := am.alerted[key]; ok {
-		if time.Since(last) < cooldown {
+		if now.Sub(last) < cooldown {
 			return
 		}
 	}
 
 	alert := agent.Alert{
-		Timestamp: time.Now(),
+		Timestamp: now,
 		Level:     level,
 		AgentID:   a.Info.ID,
 		AgentName: a.Info.Name,
 		Message:   msg,
 	}
 	am.alerts = append(am.alerts, alert)
-	am.alerted[key] = time.Now()
+	am.alerted[key] = now
 
 	if len(am.alerts) > am.maxAlerts {
 		am.alerts = am.alerts[len(am.alerts)-am.maxAlerts:]
@@ -290,7 +300,7 @@ func (am *AlertMonitor) GetRecentAlerts(minutes int) []agent.Alert {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
+	cutoff := am.timeNow().Add(-time.Duration(minutes) * time.Minute)
 	var result []agent.Alert
 	for _, a := range am.alerts {
 		if a.Timestamp.After(cutoff) {

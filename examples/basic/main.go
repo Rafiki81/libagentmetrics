@@ -98,7 +98,7 @@ func main() {
 	tokenMon.Collect(agents)
 	alertMon.CheckFleet(agents)
 
-	localModels := localMon.GetModels()
+	localModels := localMon.Collect()
 
 	// 5. Print results
 	for _, a := range agents {

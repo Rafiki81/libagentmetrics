@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,8 @@ type SecurityMonitor struct {
 	events    []agent.SecurityEvent
 	maxEvents int
 	seen      map[string]time.Time
+	regex     map[string]*regexp.Regexp
+	invalid   map[string]bool
 }
 
 // NewSecurityMonitor creates a new security monitor.
@@ -30,6 +33,8 @@ func NewSecurityMonitor(cfg config.SecurityConfig) *SecurityMonitor {
 		events:    make([]agent.SecurityEvent, 0),
 		maxEvents: maxEvents,
 		seen:      make(map[string]time.Time),
+		regex:     make(map[string]*regexp.Regexp),
+		invalid:   make(map[string]bool),
 	}
 }
 
@@ -57,7 +62,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		cmdLower := strings.ToLower(cmd.Command)
 
 		for _, pattern := range sm.config.DangerousCommands {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatDangerousCommand,
 					Severity:    agent.SecSevCritical,
@@ -70,7 +75,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.EscalationCommands {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatPermEscalation,
 					Severity:    agent.SecSevHigh,
@@ -83,7 +88,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.CodeInjectionPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatCodeInjection,
 					Severity:    agent.SecSevHigh,
@@ -96,7 +101,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.SystemModifyCommands {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatSystemModify,
 					Severity:    agent.SecSevMedium,
@@ -121,7 +126,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.ReverseShellPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatReverseShell,
 					Severity:    agent.SecSevCritical,
@@ -134,7 +139,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.ObfuscationPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatObfuscation,
 					Severity:    agent.SecSevHigh,
@@ -147,7 +152,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.ContainerEscapePatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatContainerEscape,
 					Severity:    agent.SecSevCritical,
@@ -160,7 +165,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.EnvManipulationPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatEnvManipulation,
 					Severity:    agent.SecSevHigh,
@@ -173,7 +178,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.CredentialAccessPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatCredentialAccess,
 					Severity:    agent.SecSevCritical,
@@ -186,7 +191,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.LogTamperingPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatLogTampering,
 					Severity:    agent.SecSevHigh,
@@ -199,7 +204,7 @@ func (sm *SecurityMonitor) checkCommands(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.RemoteAccessPatterns {
-			if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(cmdLower, pattern) {
 				if strings.Contains(cmdLower, "ssh-agent") || strings.Contains(cmdLower, "ssh-add") {
 					continue
 				}
@@ -240,7 +245,7 @@ func (sm *SecurityMonitor) checkFileOps(a *agent.Instance) {
 	for _, op := range a.FileOps {
 		pathLower := strings.ToLower(op.Path)
 		for _, sensitive := range sm.config.SensitiveFiles {
-			if strings.Contains(pathLower, strings.ToLower(sensitive)) {
+			if sm.matchesPatternLower(pathLower, sensitive) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatSensitiveFile,
 					Severity:    agent.SecSevHigh,
@@ -285,7 +290,7 @@ func (sm *SecurityMonitor) checkNetwork(a *agent.Instance) {
 		remoteLower := strings.ToLower(conn.RemoteAddr)
 
 		for _, host := range sm.config.SuspiciousHosts {
-			if strings.Contains(remoteLower, strings.ToLower(host)) {
+			if sm.matchesPatternLower(remoteLower, host) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatSuspiciousNet,
 					Severity:    agent.SecSevHigh,
@@ -315,7 +320,7 @@ func (sm *SecurityMonitor) checkFileSecurity(a *agent.Instance) {
 
 		if op.Op == "MODIFY" || op.Op == "CREATE" {
 			for _, pattern := range sm.config.ShellPersistenceFiles {
-				if strings.Contains(pathLower, strings.ToLower(pattern)) {
+				if sm.matchesPatternLower(pathLower, pattern) {
 					sm.addEvent(a, agent.SecurityEvent{
 						Category:    agent.SecCatShellPersistence,
 						Severity:    agent.SecSevMedium,
@@ -329,7 +334,7 @@ func (sm *SecurityMonitor) checkFileSecurity(a *agent.Instance) {
 		}
 
 		for _, pattern := range sm.config.CredentialAccessPatterns {
-			if strings.Contains(pathLower, strings.ToLower(pattern)) {
+			if sm.matchesPatternLower(pathLower, pattern) {
 				sm.addEvent(a, agent.SecurityEvent{
 					Category:    agent.SecCatCredentialAccess,
 					Severity:    agent.SecSevCritical,
@@ -440,11 +445,43 @@ func (sm *SecurityMonitor) isPackageInstall(cmdLower string) bool {
 
 func (sm *SecurityMonitor) isAllowedRegistry(cmdLower string) bool {
 	for _, reg := range sm.config.AllowedRegistries {
-		if strings.Contains(cmdLower, strings.ToLower(reg)) {
+		if sm.matchesPatternLower(cmdLower, reg) {
 			return true
 		}
 	}
 	return false
+}
+
+func (sm *SecurityMonitor) matchesPatternLower(valueLower, pattern string) bool {
+	patternLower := strings.ToLower(pattern)
+	if strings.Contains(valueLower, patternLower) {
+		return true
+	}
+	if !looksLikeRegexPattern(patternLower) {
+		return false
+	}
+	re := sm.compiledRegex(patternLower)
+	return re != nil && re.MatchString(valueLower)
+}
+
+func (sm *SecurityMonitor) compiledRegex(pattern string) *regexp.Regexp {
+	if re, ok := sm.regex[pattern]; ok {
+		return re
+	}
+	if sm.invalid[pattern] {
+		return nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		sm.invalid[pattern] = true
+		return nil
+	}
+	sm.regex[pattern] = re
+	return re
+}
+
+func looksLikeRegexPattern(pattern string) bool {
+	return strings.Contains(pattern, ".*") || strings.ContainsAny(pattern, "[]{}+?^$\\")
 }
 
 func isUnusualPort(addr string) bool {

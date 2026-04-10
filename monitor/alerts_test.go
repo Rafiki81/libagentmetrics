@@ -33,6 +33,21 @@ func TestDefaultThresholds(t *testing.T) {
 	if th.CostCritical != 5.0 {
 		t.Errorf("CostCritical = %f, want 5.0", th.CostCritical)
 	}
+	if th.DailyBudgetUSD != 0 {
+		t.Errorf("DailyBudgetUSD = %f, want 0", th.DailyBudgetUSD)
+	}
+	if th.MonthlyBudgetUSD != 0 {
+		t.Errorf("MonthlyBudgetUSD = %f, want 0", th.MonthlyBudgetUSD)
+	}
+	if th.BudgetWarnPercent != 80 {
+		t.Errorf("BudgetWarnPercent = %f, want 80", th.BudgetWarnPercent)
+	}
+	if th.BurnRateWarning != 2.0 {
+		t.Errorf("BurnRateWarning = %f, want 2.0", th.BurnRateWarning)
+	}
+	if th.BurnRateCritical != 3.0 {
+		t.Errorf("BurnRateCritical = %f, want 3.0", th.BurnRateCritical)
+	}
 	if th.IdleMinutes != 10 {
 		t.Errorf("IdleMinutes = %d, want 10", th.IdleMinutes)
 	}
@@ -341,6 +356,9 @@ func TestCheckFleet_DailyBudgetWarning(t *testing.T) {
 	th.DailyBudgetUSD = 10
 	th.BudgetWarnPercent = 80
 	am := NewAlertMonitor(th)
+	am.now = func() time.Time {
+		return time.Date(2026, time.April, 10, 12, 0, 0, 0, time.UTC)
+	}
 
 	agents := []agent.Instance{
 		{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: 4}},
@@ -365,6 +383,9 @@ func TestCheckFleet_MonthlyBudgetCritical(t *testing.T) {
 	th.CooldownMinutes = 0
 	th.MonthlyBudgetUSD = 5
 	am := NewAlertMonitor(th)
+	am.now = func() time.Time {
+		return time.Date(2026, time.April, 10, 12, 0, 0, 0, time.UTC)
+	}
 
 	agents := []agent.Instance{
 		{Info: agent.Info{ID: "a1", Name: "A1"}, Tokens: agent.TokenMetrics{EstCost: 6}},
@@ -404,13 +425,11 @@ func TestCheckFleet_DailyBurnRateWarning(t *testing.T) {
 	th.BurnRateWarning = 1.2
 	th.BurnRateCritical = 2.0
 	am := NewAlertMonitor(th)
+	now := time.Date(2026, time.April, 10, 12, 0, 0, 0, time.UTC)
+	am.now = func() time.Time { return now }
 
-	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	elapsed := now.Sub(startOfDay).Seconds()
-	if elapsed < 10*60 {
-		t.Skip("day elapsed too short for deterministic burn-rate test")
-	}
 	expected := th.DailyBudgetUSD * (elapsed / (24 * 60 * 60.0))
 	totalCost := expected * 1.3
 

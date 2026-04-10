@@ -170,6 +170,7 @@ func TestConfigSaveAndLoad(t *testing.T) {
 	path := filepath.Join(tmpDir, "config.json")
 	cfg := DefaultConfig()
 	cfg.Alerts.CPUWarning = 42
+	cfg.Alerts.DailyBudgetUSD = 15
 	cfg.Security.MaxEvents = 999
 
 	// Save
@@ -194,6 +195,9 @@ func TestConfigSaveAndLoad(t *testing.T) {
 
 	if loaded.Alerts.CPUWarning != 42 {
 		t.Errorf("loaded CPUWarning = %f, want 42", loaded.Alerts.CPUWarning)
+	}
+	if loaded.Alerts.DailyBudgetUSD != 15 {
+		t.Errorf("loaded DailyBudgetUSD = %f, want 15", loaded.Alerts.DailyBudgetUSD)
 	}
 	if loaded.Security.MaxEvents != 999 {
 		t.Errorf("loaded MaxEvents = %d, want 999", loaded.Security.MaxEvents)

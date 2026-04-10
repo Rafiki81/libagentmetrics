@@ -3,17 +3,17 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/Rafiki81/libagentmetrics.svg)](https://pkg.go.dev/github.com/Rafiki81/libagentmetrics)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Rafiki81/libagentmetrics)](https://goreportcard.com/report/github.com/Rafiki81/libagentmetrics)
 
-A Go library for real-time detection, monitoring, and analysis of AI coding agents. Zero external dependencies — stdlib only.
+A Go library for real-time detection, monitoring, and analysis of AI coding agents. No third-party Go module dependencies; several monitors use macOS system tools at runtime.
 
-**Latest release:** `v1.1.0` (2026-02-15)
+**Latest release:** `v1.1.1` (2026-04-10) — see [CHANGELOG.md](CHANGELOG.md)
 
-## What's New in v1.1.0
+## What's New in v1.1.1
 
-- **Token signal confidence** in `TokenMetrics.Confidence` so consumers can weigh metric reliability.
-- **Burn-rate guardrails** with warning/critical thresholds (`burn_rate_warning`, `burn_rate_critical`).
-- **Fleet budget alerts** with daily/monthly limits and aggregated checks via `CheckFleet`.
-- **Operational hardening** in monitors (timeouts, safer defaults, pruning and improved resilience paths).
-- **Release + CI maturity** with stable `v1.x` API policy and automated release/check workflows.
+- **Alert config parity restored** so budget and burn-rate fields in `config.AlertConfig` match the monitor, tests, and example again.
+- **Deterministic fleet alerts** via internal clock injection in `AlertMonitor`, eliminating time-of-day dependent outcomes.
+- **Safer security pattern matching** so regex-like rules such as `curl.*|.*sh` are honored without flagging literal pipe patterns in safe commands.
+- **Example flow fix** so the basic example actively calls `LocalModelMonitor.Collect()` before printing local model results.
+- **Documentation cleanup** covering runtime dependencies, config API signatures, config path, changelog location, and the Codex CLI agent ID.
 
 ## Features
 
@@ -36,7 +36,7 @@ A Go library for real-time detection, monitoring, and analysis of AI coding agen
 go get github.com/Rafiki81/libagentmetrics
 ```
 
-Requires **Go 1.24+**. No third-party dependencies.
+Requires **Go 1.24+** on **macOS**. There are no third-party Go module dependencies, but runtime monitoring uses system tools such as `ps`, `pgrep`, `lsof`, and `git`, with `sqlite3`/`nettop` used by some token collectors when available.
 
 ## Project Structure
 
@@ -127,9 +127,9 @@ func main() {
 | Function | Description |
 |----------|-------------|
 | `DefaultConfig()` | Returns configuration with sensible defaults |
-| `Load(path)` | Loads configuration from a JSON file |
-| `Save(path)` | Saves configuration to a JSON file |
-| `ConfigPath()` | Default path: `~/.config/agentmetrics/config.json` |
+| `Load()` | Loads configuration from `ConfigPath()`, creating defaults if missing |
+| `(*Config).Save()` | Saves configuration to `ConfigPath()` |
+| `ConfigPath()` | Default path: `~/.agentmetrics/config.json` |
 
 ### `monitor`
 
@@ -145,7 +145,7 @@ func main() {
 | `AlertMonitor` | `NewAlertMonitor(thresholds)` | Threshold-based alerts |
 | `SecurityMonitor` | `NewSecurityMonitor(cfg)` | Suspicious activity detection |
 | `LocalModelMonitor` | `NewLocalModelMonitor(cfg)` | Local models (Ollama, etc.) |
-| `HistoryStore` | `NewHistoryStore()` | Persistent recording with export |
+| `HistoryStore` | `NewHistoryStore(dataDir, maxSize)` | Persistent recording with export |
 
 #### Formatting Helpers
 
@@ -228,7 +228,7 @@ Token metrics also expose `confidence` (`0.0-1.0`) based on source reliability (
 | Continue.dev | `continue` | Process |
 | Windsurf | `windsurf` | Process |
 | Gemini CLI | `gemini-cli` | Process |
-| OpenAI Codex CLI | `openai-codex` | Process |
+| OpenAI Codex CLI | `codex-cli` | Process |
 | Open Codex | `open-codex` | Process |
 | MoltBot | `moltbot` | Process |
 | Codel | `codel` | Process |
@@ -243,7 +243,7 @@ The `SecurityMonitor` evaluates 18 event categories across 4 severity levels:
 
 ## Platform
 
-Designed for **macOS**. Uses system tools such as `ps`, `lsof`, `pgrep`, `nettop`, and `git`. Linux support is possible with minor adjustments to log paths and system commands.
+Designed for **macOS**. Uses system tools such as `ps`, `pgrep`, `lsof`, and `git`, plus optional `sqlite3`/`nettop` helpers for some token collection paths. Linux support is possible with minor adjustments to log paths and system commands.
 
 ## API Stability (v1)
 
@@ -260,7 +260,7 @@ For maintainability, this project prefers **Conventional Commits** in PR titles/
 
 - `feat: ...`, `fix: ...`, `docs: ...`, `perf: ...`, `refactor: ...`, `test: ...`, `ci: ...`, `chore: ...`
 
-Release notes/changelog entries are generated automatically when creating a GitHub Release from a semantic tag (e.g. `v1.2.3`).
+Curated release notes live in [CHANGELOG.md](CHANGELOG.md). GitHub Releases can still generate additional notes automatically from a semantic tag (e.g. `v1.2.3`).
 
 ## Contributing
 
